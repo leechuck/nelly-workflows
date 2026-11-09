@@ -70,7 +70,7 @@ YML
 
 echo "=== phenopacket.yml ==="; cat phenopacket.yml
 echo "=== application.properties ==="; cat application.properties
-java -Xmx28g -jar /exomiser/exomiser-cli-15.0.0.jar analyse \
+java -Xmx28g -jar /exomiser/exomiser-cli-15.1.0.jar analyse \
   --sample phenopacket.yml --vcf "$VCF" --assembly "$ASM_GRC" \
   --analysis analysis.yml --output-directory results --output-filename exomiser \
   --output-format TSV_GENE,TSV_VARIANT,JSON,HTML

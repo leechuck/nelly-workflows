@@ -2,7 +2,7 @@ cwlVersion: v1.1
 class: CommandLineTool
 # Phenotype-driven gene/variant prioritisation with Exomiser (open source),
 # replacing the phenotype-label-only LLM ranker. The setup logic lives in
-# /run-exomiser.sh INSIDE the wrapper image (nelly-exomiser:v3 = JRE + exomiser
+# /run-exomiser.sh INSIDE the wrapper image (nelly-exomiser:v4 = JRE + exomiser
 # dist + script), so there is NO inline shell here and therefore no CWL string
 # interpolation of bash. Values are passed as clean positional arguments.
 baseCommand: [bash, /run-exomiser.sh]
@@ -11,7 +11,7 @@ requirements:
     ramMin: 32768
     coresMin: 4
   DockerRequirement:
-    dockerPull: 'nelly-exomiser:v3'
+    dockerPull: 'nelly-exomiser:v4'
 arguments:
   - position: 1
     valueFrom: $(inputs.exomiser_data.path)

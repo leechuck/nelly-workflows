@@ -3,6 +3,59 @@
 All notable changes to the annotation/interpretation tail of this workflow
 (`main-vg.cwl`: VEP → slivar → genome-linter) are documented here.
 
+## [Unreleased] — Modernisation 2026-11 — annotation (WP5)
+
+### Changed
+
+- **`vep.cwl` — VEP 102.0 → 116.3** (`ensemblorg/ensembl-vep:release_116.3`). New
+  flags for the ACMG evidence builder: `--mane --protein --pick_allele_gene`
+  (MANE Select / protein position / picked-consequence-per-gene) and
+  `--af_gnomade --af_gnomadg --max_af` (gnomAD v4 allele frequencies from the
+  cache — the ACMG step's primary population-frequency source, so it works on
+  the ~50-record candidate VCF that lacks slivar INFO fields too). The pre-existing
+  `--af --af_gnomad` flags are kept (both verified valid in 116.3); `--symbol
+  --canonical --hgvs --numbers --biotype --transcript_version` were already
+  present. `--cache_version 116` is now pinned explicitly so the tool fails fast
+  if pointed at a cache directory that does not contain the 116 GRCh38 cache
+  instead of silently falling back to an older one. All four `--custom`
+  annotations (PAVS/GO/HPO/PPI), `--fasta`, `--check_existing`, `--tsl`,
+  `--polyphen b`, `--sift b`, bgzip output and the `vep_dir` cache-directory
+  input are unchanged; the tool takes the VCF to annotate via `vep_input`, so it
+  can be invoked a second time on the ACMG candidate mini-VCF without changes.
+- **`benchmark/stage_vep_cache.sh` (new)** — downloads
+  `homo_sapiens_vep_116_GRCh38.tar.gz` (~26 GB; filename confirmed against the
+  `https://ftp.ensembl.org/pub/release-116/variation/indexed_vep_cache/`
+  listing, size verified against Content-Length), unpacks to
+  `/mnt/data1/nelly-sim/vep-116/cache/homo_sapiens/116_GRCh38/` on ws and prints
+  (does not run) `arv-put --name vep-116-GRCh38-cache
+  /mnt/data1/nelly-sim/vep-116/cache`. Resumable; re-running skips or resumes
+  the download.
+- **`exomiser-wrapper/` — Exomiser 15.0.0 → 15.1.0** (`nelly-exomiser:v4`). The
+  Dockerfile now downloads `exomiser-cli-15.1.0-distribution.zip` from the
+  GitHub release at build time (asset name verified: 302 →
+  `exomiser-cli-15.1.0-distribution.zip`, ~170 MB; zip top-level dir
+  `exomiser-cli-15.1.0/`) instead of COPYing a pre-unpacked distribution from
+  the build context. `run-exomiser.sh` points at
+  `/exomiser/exomiser-cli-15.1.0.jar`; `exomiser.cwl` bumps `dockerPull` to
+  `nelly-exomiser:v4`. JRE base (eclipse-temurin:21), `/run-exomiser.sh` and no
+  ENTRYPOINT kept.
+
+### Verified against the Exomiser 15.1.0 release notes / docs
+
+- The only analysis-behaviour change is an **optional** new
+  `pathogenicityFilter.target` key (`ALL` default, `NON_CODING` for genome-mode
+  analyses); our exome analysis.yml (`keepNonPathogenic: true`) is untouched and
+  stays the documented recommendation for exome analysis.
+- Output file names unchanged in 15.1.x: with `--output-filename exomiser
+  --output-format TSV_GENE,TSV_VARIANT,JSON,HTML` the results are
+  `results/exomiser.genes.tsv`, `results/exomiser.variants.tsv`,
+  `results/exomiser.jsonl` (JSON is still JSON-Lines), `results/exomiser.html`
+  — the `exomiser.cwl` globs are still correct.
+- Data version stays **2512** (still the newest Exomiser data release);
+  `exomiser_data_version` default unchanged.
+- Image built on ws, `java -jar ... --version` → `15.1.0`. Not
+  `arv-keepdocker`'d (supervisor does that).
+
 ## [Unreleased] — Candidate re-ranking: repeat expansions and recessive genotypes
 
 Closes the two misses from the 18 Oct 2026 reruns, where the summary named a
