@@ -29,5 +29,8 @@ export NELLY_STEP_CORES="${SLURM_CPUS_PER_TASK:-24}"
 export TMPDIR="$WORK_ROOT/tmp/job-${SLURM_JOB_ID:-$$}"
 mkdir -p "$TMPDIR" "$OUTDIR" "$WORK_ROOT/logs"
 
+# Ensure nelly-acmg-agent:v3.sif and vep_cache are staged (idempotent, lock-guarded)
+STAGE_ONLY=1 bash "$WF_DIR/local/sbatch-stage-and-run-tail-ibex.sh"
+
 cd "$WF_DIR"
 bash local/run.sh "$OUTDIR" "$WORKFLOW" "$INPUTS_JSON" "$@"
