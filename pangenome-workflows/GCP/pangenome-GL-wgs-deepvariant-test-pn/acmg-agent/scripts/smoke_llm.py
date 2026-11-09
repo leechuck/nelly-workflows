@@ -34,16 +34,21 @@ for _p in (Path("/app"), Path("/work/acmg-agent"), _here):
 
 from acmg_agent.agent import run_all  # noqa: E402
 from acmg_agent.candidates import rank_key, read_tsv, select_candidates  # noqa: E402
+from acmg_agent.classify import classify  # noqa: E402
 from acmg_agent.criteria import evaluate_all  # noqa: E402
 from acmg_agent.evidence import build_evidence  # noqa: E402
 from acmg_agent.inputs import ClinvarIndex, VepIndex, load_gene_table  # noqa: E402
-from acmg_agent.llm_backends import select_backend_from_env  # noqa: E402
+from acmg_agent.llm_backends import Message, select_backend_from_env  # noqa: E402
+from acmg_agent.tools import all_tool_specs  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
+    default_fix = str(_here / "tests" / "fixtures" / "acmg")
+    if not Path(default_fix).exists():
+        default_fix = "/work/acmg-agent/tests/fixtures/acmg"
     ap = argparse.ArgumentParser(description="smoke-test run_llm_layer on the TS2 fixtures")
-    ap.add_argument("--fixtures", default="/work/acmg-agent/tests/fixtures/acmg")
-    ap.add_argument("--gene-table", required=True)
+    ap.add_argument("--fixtures", default=default_fix)
+    ap.add_argument("--gene-table", default=None, help="default: <fixtures>/gene_table.tsv")
     ap.add_argument("--genes-tsv", default=None, help="default: <fixtures>/TS2/exomiser.genes.tsv")
     ap.add_argument("--variants-tsv", default=None, help="default: <fixtures>/TS2/exomiser.variants.tsv")
     ap.add_argument("--sample", default="TS2")
@@ -54,7 +59,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--global-seconds", type=int, default=3000)
     args = ap.parse_args(argv)
 
+    os.environ.setdefault("ACMG_SAMPLE", str(args.sample))
     fix = Path(args.fixtures)
+    gene_table_path = Path(args.gene_table) if args.gene_table else (fix / "gene_table.tsv")
     genes_path = Path(args.genes_tsv or fix / args.sample / "exomiser.genes.tsv")
     variants_path = Path(args.variants_tsv or fix / args.sample / "exomiser.variants.tsv")
 
@@ -67,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     if vep_vcf.exists():
         vep_idx = VepIndex.from_vcf(vep_vcf)
     clinvar_idx = ClinvarIndex(fix / "clinvar.vcf.gz")
-    gene_table = load_gene_table(args.gene_table)
+    gene_table = load_gene_table(gene_table_path)
 
     # rank order as in the workflow (rank_key), Evidence + deterministic criteria
     order = sorted(range(len(raw_candidates)), key=lambda i: rank_key(raw_candidates[i]))
@@ -91,13 +98,33 @@ def main(argv: list[str] | None = None) -> int:
         backend_name = getattr(backend, "backend_name", "none")
         model = getattr(backend, "model_name", None)
         llm_status = "off" if backend is None else None
-        print(f"[backend] {backend_name} model={model} threads={os.environ.get('ACMG_THREADS', '?')} "
-              f"ctx={os.environ.get('ACMG_N_CTX', '8192')}")
+        print(f"[backend] {backend_name} model={model} max_tokens={getattr(backend, 'max_tokens', '?')} "
+              f"affinity={getattr(backend, 'session_affinity', 'n/a')}")
+        if backend is not None:
+            t_probe = time.monotonic()
+            probe_reply = backend.chat(
+                [
+                    Message(role="system", content="You are an ACMG evaluation assistant. Use the provided tools."),
+                    Message(role="user", content="Call get_variant_evidence to inspect the current variant."),
+                ],
+                tools=all_tool_specs(),
+            )
+            probe_wall = time.monotonic() - t_probe
+            probe_calls = [(tc.name, tc.arguments, tc.id) for tc in probe_reply.tool_calls]
+            print(f"[probe chat()] {probe_wall:.2f}s tool_calls={probe_calls} content={probe_reply.content!r}")
         t0 = time.monotonic()
         pack, llm_status = run_all(pack, backend, global_seconds=args.global_seconds,
                                    max_variants=args.max_variants)
         wall = time.monotonic() - t0
         print(f"[wall time] {wall:.1f}s (per-variant budget 360s, global {args.global_seconds}s)")
+        for p in pack:
+            ev = p["evidence"]
+            clf = classify(p["criteria"])
+            print(
+                f"[per-variant] {ev.gene:<10} status={p.get('agent_status'):<9} "
+                f"wall={str(p.get('wall_seconds', '-')):>6}s calls={str(p.get('n_tool_calls', '-')):>2} "
+                f"class={clf.class_.upper()} ({clf.points} pts) adjusted={p.get('adjusted')}"
+            )
 
     statuses = {p["evidence"].gene: p.get("agent_status") for p in pack}
     print(f"[llm.status] {llm_status}")
@@ -107,8 +134,11 @@ def main(argv: list[str] | None = None) -> int:
         ev = p["evidence"]
         if ev.gene != args.lead_gene:
             continue
+        clf = classify(p["criteria"])
+        print(f"[{args.lead_gene} final class] {clf.class_.upper()} (points={clf.points}, rule_based={clf.rule_based_class.upper()})")
         print(f"[{args.lead_gene} criteria table] adjusted_by_agent codes: {p.get('adjusted')}")
         print(f"[{args.lead_gene} agent_rationale] {p.get('agent_rationale')}")
+        print(f"[{args.lead_gene} narrative] {p.get('narrative')}")
         for c in p["criteria"]:
             if c.status in ("met", "not_evaluable"):
                 flag = " *" if c.code in (p.get("adjusted") or []) else ""
@@ -120,8 +150,16 @@ def main(argv: list[str] | None = None) -> int:
         "llm_status": llm_status,
         "agent_statuses": statuses,
         "candidates": [
-            {"gene": p["evidence"].gene, "agent_status": p["agent_status"],
-             "adjusted": p.get("adjusted"), "rationale": p.get("agent_rationale")}
+            {
+                "gene": p["evidence"].gene,
+                "agent_status": p["agent_status"],
+                "wall_seconds": p.get("wall_seconds"),
+                "n_tool_calls": p.get("n_tool_calls"),
+                "final_class": classify(p["criteria"]).class_.upper(),
+                "points": classify(p["criteria"]).points,
+                "adjusted": p.get("adjusted"),
+                "rationale": p.get("agent_rationale"),
+            }
             for p in pack
         ],
     }

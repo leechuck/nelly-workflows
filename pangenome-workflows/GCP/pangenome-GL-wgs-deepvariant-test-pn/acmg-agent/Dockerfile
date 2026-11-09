@@ -1,9 +1,11 @@
-# nelly-acmg-agent:v1 -- ACMG evaluation agent runtime.
+# nelly-acmg-agent:v2 -- ACMG evaluation agent runtime.
 #
 # Build context is the acmg-agent/ directory:
-#   docker build -t nelly-acmg-agent:v1 acmg-agent/
+#   docker build -t nelly-acmg-agent:v2 acmg-agent/
 # (MODEL_URL defaults to bartowski's Qwen2.5-3B-Instruct Q4_K_M GGUF, ~2 GB;
-# build on ws, not the laptop.)
+# build on ws, not the laptop. In production the step defaults to the lab
+# unimatrix01 Qwen3.8-27B endpoint via ACMG_LLM_BACKEND=openai, keeping the
+# local 3B GGUF as the offline fallback inside the image.)
 #
 # WHY 3B, NOT 7B (design §8.4 named 7B as the default): the real-model smoke
 # test on ws with 8 vcpus showed Qwen2.5-7B-Instruct Q4_K_M needs ~130 s for

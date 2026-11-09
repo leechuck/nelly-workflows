@@ -1,4 +1,4 @@
-cwlVersion: v1.1
+cwlVersion: v1.2
 class: CommandLineTool
 # ACMG evaluation agent (replaces genome-linter-llm.cwl). Deterministic
 # ACMG/AMP 2015 + ClinGen SVI engine plus a bounded LLM review pass over the
@@ -8,13 +8,10 @@ class: CommandLineTool
 # a rejected/failed/timed-out LLM assessment falls back to the deterministic
 # result, so the step always produces a complete report.
 #
-# The LLM is local (Qwen2.5-7B-Instruct Q4_K_M baked into the image, CPU only,
-# no network): ACMG_THREADS must receive $(runtime.cores) so llama.cpp sizes
-# its thread pool from the assigned container cores.
-#
-# NOTE (WP4 supervisor integration): while WP1 is unfinished this tool is
-# standalone; the intended main-vg.cwl step/inputs/outputs blocks live in
-# acmg-agent/WIRING.md (including the removal of the genomelinter step).
+# LLM backend is configured via workflow inputs mapped to environment variables
+# (openai endpoint by default, with local 3B GGUF via llama.cpp as offline
+# fallback inside the image). The API key travels only via EnvVarRequirement
+# and never appears in argv.
 baseCommand: [python, -m, acmg_agent.cli, assess]
 requirements:
   InlineJavascriptRequirement: {}
@@ -25,12 +22,19 @@ requirements:
     envDef:
       PYTHONPATH: /app
       # llama.cpp thread count from the runtime cores (design 4.3 LLM budget)
-      ACMG_THREADS: $(runtime.cores)
+      ACMG_THREADS: $(String(runtime.cores))
       # Phenotype labels travel via env, never through argv shell-quoting
       # (notes-cwl-gotchas.md #1/#3); read by acmg_agent.cli --phenotype default.
       ACMG_PHENOTYPE: $(inputs.phenotype)
+      # LLM backend configuration via env vars (never shell-reparsed; API key
+      # never appears on the command line).
+      ACMG_LLM_BACKEND: $(inputs.llm_backend)
+      ACMG_LLM_ENDPOINT: $(inputs.llm_endpoint)
+      ACMG_LLM_MODEL: $(inputs.llm_model)
+      ACMG_LLM_API_KEY: $(inputs.llm_api_key)
+      ACMG_LLM_MAX_TOKENS: $(String(inputs.llm_max_tokens))
   DockerRequirement:
-    dockerPull: 'nelly-acmg-agent:v1'
+    dockerPull: 'nelly-acmg-agent:v2'
 arguments:
   # VEP-annotated mini-VCF from the vep-candidates step: the ACMG evidence
   # builder's primary annotation source (consequence, MANE/HGVS, AFs).
@@ -59,6 +63,9 @@ arguments:
   # surface as tier-0 candidates; omitted when not wired.
   - prefix: --eh-json
     valueFrom: "$(inputs.eh_json ? inputs.eh_json.path : null)"
+  # STRchive repeat locus definitions JSON (optional, guarded per gotcha 5).
+  - prefix: --strchive-json
+    valueFrom: "$(inputs.strchive_json ? inputs.strchive_json.path : null)"
   # slivar-annotated normalized VCF (optional secondary AF/nhomalt source).
   - prefix: --slivar-vcf
     valueFrom: "$(inputs.slivar_vcf ? inputs.slivar_vcf.path : null)"
@@ -75,6 +82,8 @@ inputs:
       - .tbi
   gene_table:
     type: File
+  strchive_json:
+    type: File?
   exomiser_genes_tsv:
     type: File?
   exomiser_variants_tsv:
@@ -85,7 +94,7 @@ inputs:
     type: File?
   sample_name:
     type: string
-    default: "proband"
+    default: "sample"
   hpo_terms:
     type: string
     default: ""
@@ -99,6 +108,21 @@ inputs:
   top_candidates:
     type: int
     default: 10
+  llm_backend:
+    type: string
+    default: "openai"
+  llm_endpoint:
+    type: string
+    default: "http://unimatrix01.kaust.edu.sa:8000/v1"
+  llm_model:
+    type: string
+    default: "qwen3.8-27b"
+  llm_api_key:
+    type: string
+    default: ""
+  llm_max_tokens:
+    type: int
+    default: 4096
 outputs:
   acmg_json:
     type: File

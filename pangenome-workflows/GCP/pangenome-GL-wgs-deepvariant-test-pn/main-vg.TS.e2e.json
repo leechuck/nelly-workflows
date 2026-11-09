@@ -5,7 +5,6 @@
   "dv_output_gvcf": "variants.dv.gvcf.gz",
   "dv_output_vcf": "variants.dv.vcf.gz",
   "eh_output_prefix": "eh_repeats",
-  "genomelinter_output_name": "genomelinter-output.txt",
   "go_custom_args": "GO_CLASSES,bed,overlap",
   "go_custom_file": {
     "basename": "sorted.plugin.go.bed.gz",
@@ -134,5 +133,33 @@
     "basename": "ksa_hg38.hapl",
     "location": "keep:d704d713f7039bbc4026d55fafec7c33+2743/ksa_hg38.hapl"
   },
-  "dv_mode": "standard"
+  "dv_mode": "standard",
+  "acmg_clinvar_vcf": {
+    "class": "File",
+    "basename": "clinvar.vcf.gz",
+    "location": "keep:28a24f20fb9659e2ba4e4b9a17f7bec0+778/clinvar.vcf.gz",
+    "secondaryFiles": [
+      {
+        "class": "File",
+        "basename": "clinvar.vcf.gz.tbi",
+        "location": "keep:28a24f20fb9659e2ba4e4b9a17f7bec0+778/clinvar.vcf.gz.tbi"
+      }
+    ]
+  },
+  "acmg_gene_table": {
+    "class": "File",
+    "basename": "gene_table.tsv",
+    "location": "keep:95d0b6027bd22592ac4ebde6412c0d63+100/gene_table.tsv"
+  },
+  "acmg_strchive_json": {
+    "class": "File",
+    "basename": "STRchive-loci.json",
+    "location": "keep:95d0b6027bd22592ac4ebde6412c0d63+100/STRchive-loci.json"
+  },
+  "acmg_top_candidates": 10,
+  "llm_backend": "openai",
+  "llm_endpoint": "http://unimatrix01.kaust.edu.sa:8000/v1",
+  "llm_model": "qwen3.8-27b",
+  "llm_api_key": "FROM-ENV",
+  "llm_max_tokens": 4096
 }

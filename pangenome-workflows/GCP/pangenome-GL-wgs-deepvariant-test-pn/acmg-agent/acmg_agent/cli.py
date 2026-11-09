@@ -254,6 +254,8 @@ def cmd_assess(args: argparse.Namespace) -> int:
             # review priority follows the re-ranked candidate order
             review_order = sorted(range(len(pairs)), key=lambda i: rank_key(pairs[i][0]))
         if not args.no_llm:
+            if getattr(args, "sample", None):
+                os.environ.setdefault("ACMG_SAMPLE", str(args.sample))
             try:
                 backend = select_backend_from_env()
             except Exception as exc:

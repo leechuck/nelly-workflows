@@ -338,12 +338,12 @@ def run_agent(
                         )
                         result.narrative = _generate_narrative(backend, ev, merged, deadline)
                         return result
-                    messages.append(Message(role="tool", content=f"SUBMISSION REJECTED: {reason}", name=SUBMIT_TOOL))
+                    messages.append(Message(role="tool", content=f"SUBMISSION REJECTED: {reason}", name=SUBMIT_TOOL, tool_call_id=tc.id))
                 elif tc.name in (set(dispatch) - {SUBMIT_TOOL}):
                     text = dispatch[tc.name](tc.arguments)
-                    messages.append(Message(role="tool", content=text, name=tc.name))
+                    messages.append(Message(role="tool", content=text, name=tc.name, tool_call_id=tc.id))
                 else:
-                    messages.append(Message(role="tool", content=f"unknown tool: {tc.name}", name=tc.name))
+                    messages.append(Message(role="tool", content=f"unknown tool: {tc.name}", name=tc.name, tool_call_id=tc.id))
         except Exception as exc:  # dispatch crash
             return fallback(f"tool dispatch failed: {exc}", "failed")
 
@@ -431,12 +431,15 @@ def run_all(
             cand["adjusted"] = []
             continue
         reviewed += 1
-        remaining_global = deadline - time.monotonic()
+        t_var = time.monotonic()
+        remaining_global = deadline - t_var
         budget = min(per_variant_seconds, max(1, remaining_global))
         result = run_agent(
             cand["evidence"], cand["criteria"], backend,
             per_variant_seconds=max(1, int(budget)),
         )
+        cand["wall_seconds"] = round(time.monotonic() - t_var, 2)
+        cand["n_tool_calls"] = result.n_tool_calls
         cand["agent_status"] = result.status
         cand["agent_rationale"] = result.rationale
         cand["narrative"] = result.narrative

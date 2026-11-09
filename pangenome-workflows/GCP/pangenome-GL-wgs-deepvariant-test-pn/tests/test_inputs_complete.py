@@ -52,7 +52,11 @@ REQUIRED_AC = required_inputs(ALIGN_CALL)
 
 def test_workflow_has_required_inputs():
     # Sanity: the parser found the inputs we know are required (no defaults).
-    for name in ("graph", "hapl", "ref", "reads1", "reads2", "exomiser_data", "slivar_gnomad"):
+    for name in (
+        "graph", "hapl", "ref", "reads1", "reads2",
+        "exomiser_data", "slivar_gnomad",
+        "acmg_clinvar_vcf", "acmg_gene_table",
+    ):
         assert name in REQUIRED, f"{name} should be a required workflow input"
 
 

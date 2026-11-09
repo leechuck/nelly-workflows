@@ -328,3 +328,183 @@ def test_message_conversion_roundtrip():
     assert d["tool_calls"][0]["function"]["arguments"] == '{"a": 1}'
     m2 = _completion_to_message({"choices": [{"message": d}]})
     assert m2.tool_calls[0].name == "t" and m2.tool_calls[0].arguments == {"a": 1}
+
+
+def test_openai_backend_max_tokens_and_reasoning_ignored(monkeypatch):
+    from acmg_agent.llm_backends import OpenAICompatBackend, _completion_to_message, _message_to_openai
+
+    monkeypatch.delenv("ACMG_LLM_MAX_TOKENS", raising=False)
+    b1 = OpenAICompatBackend("http://unimatrix01.kaust.edu.sa:8000/v1", "qwen3.8-27b")
+    assert b1.max_tokens == 4096
+    assert b1.timeout_seconds == 300
+
+    monkeypatch.setenv("ACMG_LLM_MAX_TOKENS", "8192")
+    b2 = OpenAICompatBackend("http://unimatrix01.kaust.edu.sa:8000/v1", "qwen3.8-27b")
+    assert b2.max_tokens == 8192
+
+    resp = {
+        "choices": [
+            {
+                "finish_reason": "tool_calls",
+                "message": {
+                    "role": "assistant",
+                    "reasoning": "chain of thought",
+                    "reasoning_content": "more chain of thought",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_qwen_1",
+                            "type": "function",
+                            "function": {"name": "get_variant_evidence", "arguments": "{}"},
+                        }
+                    ],
+                },
+            }
+        ]
+    }
+    msg = _completion_to_message(resp)
+    assert msg.content is None
+    assert len(msg.tool_calls) == 1
+    assert msg.tool_calls[0].id == "call_qwen_1"
+    serialized = _message_to_openai(msg)
+    assert "reasoning" not in serialized
+    assert "reasoning_content" not in serialized
+    assert serialized["tool_calls"][0]["id"] == "call_qwen_1"
+
+
+def test_openai_backend_length_truncation_retries_once_2x(monkeypatch):
+    from acmg_agent.llm_backends import OpenAICompatBackend
+
+    backend = OpenAICompatBackend(
+        "http://unimatrix01.kaust.edu.sa:8000/v1",
+        "qwen3.8-27b",
+        max_tokens=4096,
+        backoff_seconds=0,
+    )
+    seen_max_tokens: list[int] = []
+    responses = [
+        {
+            "choices": [
+                {
+                    "finish_reason": "length",
+                    "message": {"role": "assistant", "reasoning": "all tokens spent reasoning", "content": None},
+                }
+            ]
+        },
+        {
+            "choices": [
+                {
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "role": "assistant",
+                        "reasoning": "finished thinking",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {"name": "get_variant_evidence", "arguments": "{}"},
+                            }
+                        ],
+                    },
+                }
+            ]
+        },
+    ]
+
+    def fake_post(body):
+        seen_max_tokens.append(body["max_tokens"])
+        return responses.pop(0)
+
+    monkeypatch.setattr(backend, "_post_json", fake_post)
+    reply = backend.chat([Message(role="user", content="hi")], tools=[{"type": "function"}])
+    assert seen_max_tokens == [4096, 8192]
+    assert len(reply.tool_calls) == 1
+    assert reply.tool_calls[0].name == "get_variant_evidence"
+
+
+def test_openai_backend_double_length_truncation_surfaces_failed(monkeypatch):
+    from acmg_agent.llm_backends import OpenAICompatBackend
+
+    backend = OpenAICompatBackend(
+        "http://unimatrix01.kaust.edu.sa:8000/v1",
+        "qwen3.8-27b",
+        max_tokens=4096,
+        backoff_seconds=0,
+    )
+    truncated = {
+        "choices": [
+            {
+                "finish_reason": "length",
+                "message": {"role": "assistant", "reasoning": "still reasoning", "content": None},
+            }
+        ]
+    }
+    monkeypatch.setattr(backend, "_post_json", lambda body: truncated)
+    ev = make_ev()
+    det = det_criteria(ev)
+    res = run_agent(ev, det, backend)
+    assert res.status == "failed"
+    assert res.criteria == det
+
+
+def test_openai_backend_http_retries_and_session_affinity(monkeypatch):
+    import http.client
+    import json as _json
+    from acmg_agent.llm_backends import OpenAICompatBackend
+
+    backend = OpenAICompatBackend(
+        "http://unimatrix01.kaust.edu.sa:8000/v1",
+        "qwen3.8-27b",
+        sample="TS2",
+        backoff_seconds=0,
+    )
+    assert backend.session_affinity.startswith("TS2-")
+    captured_headers: list[dict] = []
+    outcomes = [
+        ConnectionResetError("reset"),
+        (503, "{}"),
+        (
+            200,
+            _json.dumps({
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": "ok reply"},
+                    }
+                ]
+            }),
+        ),
+    ]
+
+    class FakeResp:
+        def __init__(self, status, body):
+            self.status = status
+            self._body = body.encode()
+
+        def read(self):
+            return self._body
+
+    class FakeConn:
+        def __init__(self, netloc, timeout=None):
+            self.netloc = netloc
+            self.timeout = timeout
+
+        def request(self, method, path, body=None, headers=None):
+            captured_headers.append(dict(headers or {}))
+            item = outcomes.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            self._resp = FakeResp(*item)
+
+        def getresponse(self):
+            return self._resp
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(http.client, "HTTPConnection", FakeConn)
+    msg = backend.chat([Message(role="user", content="ping")], tools=[])
+    assert msg.content == "ok reply"
+    assert len(captured_headers) == 3
+    assert all(h.get("X-Session-Affinity") == backend.session_affinity for h in captured_headers)
