@@ -11,6 +11,8 @@ class: Workflow
 requirements:
   InlineJavascriptRequirement: {}
   MultipleInputFeatureRequirement: {}
+  NetworkAccess:
+    networkAccess: true
   ResourceRequirement:
     ramMin: $(1 * 1024)
     coresMin: 1

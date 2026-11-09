@@ -93,9 +93,15 @@ if data.get("llm_api_key") == "FROM-ENV":
         data["llm_api_key"] = os.environ.get("ACMG_LLM_API_KEY", "")
 ep = data.get("llm_endpoint", "")
 if "unimatrix01.kaust.edu.sa" in ep:
+    has_ns = False
     try:
-        socket.gethostbyname("unimatrix01.kaust.edu.sa")
+        with open("/etc/resolv.conf") as rf:
+            has_ns = any(line.strip().startswith("nameserver") for line in rf)
+        if has_ns:
+            socket.gethostbyname("unimatrix01.kaust.edu.sa")
     except OSError:
+        has_ns = False
+    if not has_ns:
         data["llm_endpoint"] = ep.replace("unimatrix01.kaust.edu.sa", "10.72.186.139")
 with open(dst, "w") as out:
     json.dump(data, out, indent=2)
@@ -107,7 +113,15 @@ PY
 SAMPLER_PID=$!
 
 echo "[$(date -Is)] Starting cwltool (HOST=$HOST): workflow=$WORKFLOW inputs=$INPUTS_JSON outdir=$OUTDIR"
-"$CWLTOOL" \
+"$PYTHON" -c '
+import sys, cwltool.job, cwltool.main
+_orig_init = cwltool.job.JobBase.__init__
+def _init_with_net(self, *args, **kwargs):
+    _orig_init(self, *args, **kwargs)
+    self.networkaccess = True
+cwltool.job.JobBase.__init__ = _init_with_net
+sys.exit(cwltool.main.run())
+' \
   --parallel \
   --timestamps \
   "${ENGINE_ARGS[@]}" \
