@@ -89,10 +89,11 @@ stage_keep_file() {
   fi
 }
 
-# 1. Stage tail SIFs first (in reverse order of sbatch-stage-tail-ibex.sh so both jobs work on disjoint images!)
+# 1. Stage tail SIFs first
 stage_sif_from_keep_tar "nelly-exomiser:v4.sif" "7712a129b6c89fb29f6f39eb5842ad90+429/sha256:1e800dce4081b13665db09bcb3e650f8fe38d241ab2eea2f2031a205ecda6dcd.tar"
-stage_sif_from_keep_tar "nelly-acmg-agent:v2.sif" "c15a4a032ac6d0bcb2c10e8bd9653a05+1731/sha256:8ed50b5e81a5b87c4d05aca26b7dccf818c76c2f0afe125a74680e4f667fe341.tar"
-ln -sf "nelly-acmg-agent:v2.sif" "$SIF_CACHE/nelly-acmg-agent:v1.sif"
+stage_sif_from_keep_tar "nelly-acmg-agent:v3.sif" "49f9dd239b70c0fa5a67dc51edea9e99+1731/sha256:dda1610e81cdbac256e71f1eb78d1bc6b5308da8f332c440e897c8261d7a1877.tar"
+ln -sf "nelly-acmg-agent:v3.sif" "$SIF_CACHE/nelly-acmg-agent:v2.sif"
+ln -sf "nelly-acmg-agent:v3.sif" "$SIF_CACHE/nelly-acmg-agent:v1.sif"
 
 for uri in \
   "ensemblorg/ensembl-vep:release_116.3" \
@@ -157,10 +158,50 @@ if [ -d "$EXISTING_EXOMISER/2512_hg38" ] && [ ! -d "$INPUTS/exomiser/data/2512_h
   fi
 fi
 
-if [ ! -d "$INPUTS/vep_cache/homo_sapiens/116_GRCh38" ]; then
+if [ ! -d "$INPUTS/vep_cache/homo_sapiens/116_GRCh38/chr1" ]; then
+  rmdir "$INPUTS/vep_cache/.lock-vep" 2>/dev/null || true
   if mkdir "$INPUTS/vep_cache/.lock-vep" 2>/dev/null; then
-    echo "[$(date -Is)] Downloading VEP 116 cache from Keep (8afec8cdb796367144fa2bcec3a3dc59+624229) -> $INPUTS/vep_cache/"
-    "$ARV_GET" -f --threads 16 "8afec8cdb796367144fa2bcec3a3dc59+624229/homo_sapiens" "$INPUTS/vep_cache/homo_sapiens"
+    echo "[$(date -Is)] Downloading VEP 116 cache from Keep (8afec8cdb796367144fa2bcec3a3dc59+624229) with 24 parallel workers -> $INPUTS/vep_cache/"
+    "$PYTHON" - "$INPUTS/vep_cache" <<'PY'
+import concurrent.futures, os, sys
+import arvados, arvados.collection
+
+dst_root = sys.argv[1]
+cr = arvados.collection.CollectionReader("8afec8cdb796367144fa2bcec3a3dc59+624229")
+
+items = []
+def walk_col(col, rel=""):
+    for k, v in col.items():
+        p = f"{rel}/{k}" if rel else k
+        if isinstance(v, arvados.collection.Subcollection):
+            walk_col(v, p)
+        else:
+            items.append((p, v.size()))
+
+walk_col(cr)
+print(f"Total VEP cache files to check/stage: {len(items)}", flush=True)
+
+def fetch_one(item):
+    rel_path, expected_size = item
+    out_path = os.path.join(dst_root, rel_path)
+    if os.path.exists(out_path) and os.path.getsize(out_path) == expected_size:
+        return 0
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    local_cr = arvados.collection.CollectionReader("8afec8cdb796367144fa2bcec3a3dc59+624229")
+    tmp_path = f"{out_path}.part.{os.getpid()}"
+    with local_cr.open(rel_path, "rb") as src, open(tmp_path, "wb") as dst:
+        while True:
+            buf = src.read(4 * 1024 * 1024)
+            if not buf:
+                break
+            dst.write(buf)
+    os.replace(tmp_path, out_path)
+    return expected_size
+
+with concurrent.futures.ThreadPoolExecutor(max_workers=24) as ex:
+    total = sum(ex.map(fetch_one, items))
+print(f"Staged {total / (1024**3):.2f} GiB into {dst_root}", flush=True)
+PY
     rmdir "$INPUTS/vep_cache/.lock-vep" 2>/dev/null || true
   fi
 fi
@@ -168,7 +209,7 @@ fi
 # Wait for any locked tail SIFs/inputs to finish if another job was staging them
 for req_sif in \
   "nelly-exomiser:v4.sif" \
-  "nelly-acmg-agent:v2.sif" \
+  "nelly-acmg-agent:v3.sif" \
   "ensemblorg_s_ensembl-vep:release___116.3.sif" \
   "brentp_s_slivar:v0.3.0.sif" \
   "dunglam2k_s_phenofrommetadata:v1.01.sif" \
@@ -182,6 +223,11 @@ while [ ! -d "$INPUTS/exomiser/data/2512_hg38" ] || [ ! -d "$INPUTS/vep_cache/ho
   echo "[$(date -Is)] Waiting for exomiser/vep_cache..."
   sleep 5
 done
+
+if [ "${STAGE_ONLY:-0}" = "1" ]; then
+  echo "[$(date -Is)] STAGE_ONLY=1 completed successfully!"
+  exit 0
+fi
 
 # 3. Run full test-tail.cwl (including acmg-extract-candidates -> vep-candidates -> acmg-agent with Qwen) on TS and HD!
 cd "$WF_DIR"
