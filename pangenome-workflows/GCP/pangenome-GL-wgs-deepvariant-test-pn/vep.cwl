@@ -6,7 +6,7 @@ baseCommand:
 requirements:
   InlineJavascriptRequirement: {}
   DockerRequirement:
-    dockerPull: 'ensemblorg/ensembl-vep:release_102.0'
+    dockerPull: 'ensemblorg/ensembl-vep:release_116.3'
   ResourceRequirement:
     #coresMin: 64
     #ramMin: $(64 * 1024)
@@ -84,8 +84,8 @@ arguments:
     prefix: --buffer_size
   - valueFrom: 'homo_sapiens'
     prefix: --species
-  #- valueFrom: '110'
-  #  prefix: --cache_version
+  - valueFrom: '116'
+    prefix: --cache_version
   - '--symbol'
   - '--transcript_version'
   - '--tsl'
@@ -98,9 +98,18 @@ arguments:
   - '--cache'
   #- '--tab'
   - '--no_stats'
+  # --af_gnomad (gnomAD 2.1) is mutually exclusive with --af_gnomade (gnomAD v4)
+  # in VEP 116 and is superseded by it; --af (1000G/ESP) stays.
   - '--af'
-  - '--af_gnomad'
   - '--canonical'
+  - '--mane'
+  - '--protein'
+  - '--pick_allele_gene'
+  - '--af_gnomade'
+  - '--af_gnomadg'
+  - '--max_af'
+  - valueFrom: '116'
+    prefix: --cache_version
   - '--vcf'
   - valueFrom: 'bgzip'
     prefix: --compress_output

@@ -13,7 +13,9 @@ All notable changes to the annotation/interpretation tail of this workflow
   `--af_gnomade --af_gnomadg --max_af` (gnomAD v4 allele frequencies from the
   cache — the ACMG step's primary population-frequency source, so it works on
   the ~50-record candidate VCF that lacks slivar INFO fields too). The pre-existing
-  `--af --af_gnomad` flags are kept (both verified valid in 116.3); `--symbol
+  `--af` flag is kept; `--af_gnomad` (gnomAD 2.1) was dropped — VEP 116 rejects it
+  together with `--af_gnomade` ("Can't use --af_gnomade and --af_gnomad together")
+  and it is superseded by it; `--symbol
   --canonical --hgvs --numbers --biotype --transcript_version` were already
   present. `--cache_version 116` is now pinned explicitly so the tool fails fast
   if pointed at a cache directory that does not contain the 116 GRCh38 cache
