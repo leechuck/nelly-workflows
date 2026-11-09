@@ -121,7 +121,10 @@ class LlamaCppBackend:
         self,
         model_path: str,
         *,
-        n_ctx: int = 8192,
+        # 16384: 12 tool rounds of pack-sized tool messages overflow 8192
+        # (real-model smoke: 'Requested tokens (8193) exceed context window');
+        # models are trained on 32k, CPU KV cache stays small.
+        n_ctx: int = 16384,
         n_threads: int | None = None,
         chat_format: str = "chatml-function-calling",
         max_tokens: int = 2048,
@@ -237,9 +240,9 @@ def select_backend_from_env() -> Backend | None:
         if not path:
             return None
         try:
-            n_ctx = int(os.environ.get("ACMG_N_CTX", "8192"))
+            n_ctx = int(os.environ.get("ACMG_N_CTX", "16384"))
         except ValueError:
-            n_ctx = 8192
+            n_ctx = 16384
         return LlamaCppBackend(path, n_ctx=n_ctx)
     if mode == "openai":
         endpoint = os.environ.get("ACMG_LLM_ENDPOINT", "").strip()
