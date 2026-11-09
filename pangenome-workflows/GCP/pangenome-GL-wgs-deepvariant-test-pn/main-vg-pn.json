@@ -86,5 +86,28 @@
   "exomiser_assembly": "hg38",
   "exomiser_data_version": "2512",
   "exomiser_top_genes": 10,
-  "genomelinter_output_name": "genomelinter-output.txt"
+  "acmg_clinvar_vcf": {
+    "class": "File",
+    "location": "keep:28a24f20fb9659e2ba4e4b9a17f7bec0+778/clinvar.vcf.gz",
+    "secondaryFiles": [
+      {
+        "class": "File",
+        "location": "keep:28a24f20fb9659e2ba4e4b9a17f7bec0+778/clinvar.vcf.gz.tbi"
+      }
+    ]
+  },
+  "acmg_gene_table": {
+    "class": "File",
+    "location": "keep:95d0b6027bd22592ac4ebde6412c0d63+100/gene_table.tsv"
+  },
+  "acmg_strchive_json": {
+    "class": "File",
+    "location": "keep:95d0b6027bd22592ac4ebde6412c0d63+100/STRchive-loci.json"
+  },
+  "acmg_top_candidates": 10,
+  "llm_backend": "openai",
+  "llm_endpoint": "http://unimatrix01.kaust.edu.sa:8000/v1",
+  "llm_model": "qwen3.8-27b",
+  "llm_api_key": "FROM-ENV",
+  "llm_max_tokens": 4096
 }

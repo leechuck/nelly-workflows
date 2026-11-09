@@ -3,6 +3,7 @@ class: Workflow
 requirements:
   InlineJavascriptRequirement: {}
   SubworkflowFeatureRequirement: {}
+  StepInputExpressionRequirement: {}
   ResourceRequirement:
     ramMin: $(1 * 1024)
     coresMin: 1
@@ -109,15 +110,33 @@ inputs:
     default: 10
   vep_fasta_file: File
   metadata: File
-  genomelinter_output_name:
+  # --- ACMG evaluation agent (replaces genome-linter) ---
+  acmg_clinvar_vcf:
+    type: File
+    secondaryFiles:
+      - .tbi
+  acmg_gene_table:
+    type: File
+  acmg_strchive_json:
+    type: File?
+  acmg_top_candidates:
+    type: int
+    default: 10
+  llm_backend:
     type: string
-    default: "genomelinter-output.txt"
-  genomelinter_model:
+    default: "openai"
+  llm_endpoint:
     type: string
-    default: "openai/gpt-oss-20b:free"
-  openrouter_api_key:
+    default: "http://unimatrix01.kaust.edu.sa:8000/v1"
+  llm_model:
+    type: string
+    default: "qwen3.8-27b"
+  llm_api_key:
     type: string
     default: ""
+  llm_max_tokens:
+    type: int
+    default: 4096
 
 outputs:
   output_aligned_cram:
@@ -153,9 +172,15 @@ outputs:
   output_exomiser_html:
     type: File
     outputSource: exomiser/exomiser_html
-  output_after_genomelinter:
+  output_candidates_vep:
     type: File
-    outputSource: genomelinter/genomelinter_output
+    outputSource: vep-candidates/vep_output
+  output_acmg_json:
+    type: File
+    outputSource: acmg-agent/acmg_json
+  output_acmg_report:
+    type: File
+    outputSource: acmg-agent/acmg_report
 
 steps:
   align-and-call:
@@ -255,15 +280,56 @@ steps:
     out: [exomiser_genes_tsv, exomiser_variants_tsv, exomiser_json, exomiser_html]
     run: exomiser.cwl
 
-  # The LLM writes a grounded narrative of Exomiser's ranked output PLUS any pathogenic-
-  # range repeat expansion from ExpansionHunter (which Exomiser cannot score). Local
-  # model, no OpenRouter; it cannot recall or bury genes.
-  genomelinter:
+  # Candidate extraction -> mini-VEP -> ACMG evaluation agent (replaces genomelinter).
+  acmg-extract-candidates:
     in:
       exomiser_genes_tsv: exomiser/exomiser_genes_tsv
       exomiser_variants_tsv: exomiser/exomiser_variants_tsv
+      top_candidates: acmg_top_candidates
+      reference_fai:
+        source: ref
+        valueFrom: "$(self.secondaryFiles && self.secondaryFiles.length > 0 ? self.secondaryFiles[0] : null)"
+    out: [candidates_vcf]
+    run: acmg-extract-candidates.cwl
+
+  vep-candidates:
+    in:
+      vep_input: acmg-extract-candidates/candidates_vcf
+      vep_assembly: vep_assembly
+      vep_output_file:
+        default: "candidates.vep.vcf.gz"
+      pavs_custom_file: pavs_custom_file
+      pavs_custom_args: pavs_custom_args
+      go_custom_file: go_custom_file
+      go_custom_args: go_custom_args
+      hpo_custom_file: hpo_custom_file
+      hpo_custom_args: hpo_custom_args
+      ppi_custom_file: ppi_custom_file
+      ppi_custom_args: ppi_custom_args
+      vep_dir: vep_dir
+      vep_fasta_file: vep_fasta_file
+    out: [vep_console_out, vep_output]
+    run: vep.cwl
+
+  acmg-agent:
+    in:
+      vep_vcf: vep-candidates/vep_output
+      clinvar_vcf: acmg_clinvar_vcf
+      gene_table: acmg_gene_table
+      strchive_json: acmg_strchive_json
+      exomiser_genes_tsv: exomiser/exomiser_genes_tsv
+      exomiser_variants_tsv: exomiser/exomiser_variants_tsv
       eh_json: align-and-call/eh_json
+      slivar_vcf: slivar/slivar_output
+      sample_name: sample_name
+      hpo_terms: phenofrommetadata/hpo_terms
       phenotype: phenofrommetadata/pheno_output
-      top_genes: exomiser_top_genes
-    out: [genomelinter_output]
-    run: genome-linter-llm.cwl
+      sample_sex: phenofrommetadata/exomiser_sex
+      top_candidates: acmg_top_candidates
+      llm_backend: llm_backend
+      llm_endpoint: llm_endpoint
+      llm_model: llm_model
+      llm_api_key: llm_api_key
+      llm_max_tokens: llm_max_tokens
+    out: [acmg_json, acmg_report]
+    run: acmg-agent.cwl
