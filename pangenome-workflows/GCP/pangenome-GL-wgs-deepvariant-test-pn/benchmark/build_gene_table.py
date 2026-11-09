@@ -137,18 +137,41 @@ def read_gene_table_rows(summary_path: Path | str, assembly: str = "GRCh38") -> 
 
 
 def read_constraint(path: Path | str) -> dict[str, dict[str, float | None]]:
-    """gene -> {loeuf, pli} from gnomAD constraint metrics (v4.1 columns)."""
+    """gene -> {loeuf, pli} from gnomAD constraint metrics (v4.1 columns).
+
+    gnomAD v4.1 lists one row per transcript; keep the MANE Select / canonical
+    transcript's metrics for the gene, else the first row with values, and
+    fill any NA fields from later rows of the same gene.
+    """
     out: dict[str, dict[str, float | None]] = {}
+    pref: dict[str, tuple[bool, bool]] = {}   # gene -> (mane, canonical) flags
     try:
         with open(path, newline="") as f:
             for row in csv.DictReader(f, delimiter="\t"):
                 gene = _col(row, "gene", "gene_symbol", "symbol")
                 if not gene:
                     continue
-                out[gene] = {
-                    "loeuf": _parse_opt_float(_col(row, "loeuf", "lof.oe_ci.upper", "lof.oe")),
-                    "pli": _parse_opt_float(_col(row, "pli", "lof.pLI", "lof_hc_lc.pLI")),
-                }
+                loeuf = _parse_opt_float(_col(row, "loeuf", "lof.oe_ci.upper", "lof.oe"))
+                pli = _parse_opt_float(_col(row, "pli", "lof.pLI", "lof_hc_lc.pLI"))
+                is_mane = _col(row, "mane_select").lower() == "true"
+                is_canon = _col(row, "canonical").lower() == "true"
+                cur = out.get(gene)
+                if cur is None:
+                    out[gene] = {"loeuf": loeuf, "pli": pli}
+                    pref[gene] = (is_mane, is_canon)
+                    continue
+                if (is_mane or is_canon) and not pref[gene][0] and not pref[gene][1]:
+                    # upgrade to a preferred transcript's values
+                    if loeuf is not None:
+                        cur["loeuf"] = loeuf
+                    if pli is not None:
+                        cur["pli"] = pli
+                    pref[gene] = (is_mane, is_canon)
+                else:
+                    if cur["loeuf"] is None:
+                        cur["loeuf"] = loeuf
+                    if cur["pli"] is None:
+                        cur["pli"] = pli
     except OSError as exc:
         raise RuntimeError(f"cannot open gnomAD constraint file {path}: {exc}") from exc
     return out
@@ -197,12 +220,12 @@ def build(out_path: Path | str, clinvar_summary: Path | str,
                     "",  # moi: Exomiser supplies the disease MOI at run time
                     lof_mechanism(loeuf, lof_plp, mis_plp),
                     "" if mis_plp is None else mis_plp,
-                "" if mis_blb is None else mis_blb,
-                "" if lof_plp is None else lof_plp,
-                "",  # hotspot_regions: no curated source wired
-                "",  # bs1_threshold: engine defaults (AD 1e-4 / AR 5e-3)
-            ])
-            written += 1
+                    "" if mis_blb is None else mis_blb,
+                    "" if lof_plp is None else lof_plp,
+                    "",  # hotspot_regions: no curated source wired
+                    "",  # bs1_threshold: engine defaults (AD 1e-4 / AR 5e-3)
+                ])
+                written += 1
     except OSError as exc:
         raise RuntimeError(f"cannot write gene table {out_path}: {exc}") from exc
     return written
