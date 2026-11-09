@@ -1,12 +1,13 @@
-cwlVersion: v1.1
+cwlVersion: v1.2
 class: CommandLineTool
 requirements:
   InlineJavascriptRequirement: {}
   DockerRequirement:
-    dockerPull: "quay.io/biocontainers/vg:1.54.0--h9ee0642_0"
+    dockerPull: "quay.io/vgteam/vg:v1.78.0"
   ResourceRequirement:
     coresMin: 10
-    ramMin: $(64 * 1024)
+    ramMin: $(90 * 1024)
+    tmpdirMin: 300000
 
 # vg giraffe writes the BAM to stdout; CWL `stdout:` captures it to aligned.bam.
 # vg's progress (-p) and warnings go to stderr (the job log), so they can never
@@ -45,10 +46,12 @@ arguments:
 - $(inputs.reads1)
 - -f
 - $(inputs.reads2)
-- -d
-- $(inputs.dist)
-- -m
-- $(inputs.min)
+- --haplotype-name
+- $(inputs.hapl.path)
+- --kff-name
+- $(inputs.kff.path)
+- --index-basename
+- personal
 - --output-format
 - BAM
 - --sample
@@ -67,6 +70,10 @@ arguments:
 inputs:
   graph:
     type: File
+  hapl:
+    type: File
+  kff:
+    type: File
   ref_paths:
     type: File
   reads1:
@@ -74,9 +81,9 @@ inputs:
   reads2:
     type: File?
   dist:
-    type: File
+    type: File?
   min:
-    type: File
+    type: File?
   sample_name:
     type: string
     default: sample
