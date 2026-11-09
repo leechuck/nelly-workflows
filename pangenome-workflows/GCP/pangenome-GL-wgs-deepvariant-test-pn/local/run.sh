@@ -106,13 +106,8 @@ PY
   --md "$OUTDIR/step-resources.md" &
 SAMPLER_PID=$!
 
-INHIBIT=()
-if [ "$HOST" = "cbontsr01" ] && command -v systemd-inhibit >/dev/null 2>&1; then
-  INHIBIT=(systemd-inhibit --what=idle:sleep:shutdown --who="nelly-local" --why="Running nelly-workflows CWL pipeline")
-fi
-
 echo "[$(date -Is)] Starting cwltool (HOST=$HOST): workflow=$WORKFLOW inputs=$INPUTS_JSON outdir=$OUTDIR"
-"${INHIBIT[@]}" "$CWLTOOL" \
+"$CWLTOOL" \
   --parallel \
   --timestamps \
   "${ENGINE_ARGS[@]}" \
