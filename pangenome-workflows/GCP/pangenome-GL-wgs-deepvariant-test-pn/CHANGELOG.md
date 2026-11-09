@@ -3,6 +3,10 @@
 All notable changes to the annotation/interpretation tail of this workflow
 (`main-vg.cwl`: VEP → slivar → acmg-agent) are documented here.
 
+### R6 (2026-11-09 evening) — population frequency source
+
+- `acmg_agent` now takes the maximum gnomAD allele frequency over NON-bottlenecked populations (AFR, AMR, EAS, NFE, SAS; exomes and genomes) for PM2/BS1/BA1, per ClinGen SVI practice; founder/bottlenecked populations (ASJ, FIN, AMI, MID, REMAINING) are reported as context (`max_af_any_pop`). Found on the first real patient run: VEP `MAX_AF` for HEXA c.1421+1G>C was the Ashkenazi founder AF 0.0033, which had demoted HEXA to Likely pathogenic; with NFE 6.3e-06 it is Pathogenic (10 pts). Image `nelly-acmg-agent:v3` (code is baked in).
+
 ## [Unreleased] — ACMG evaluation agent replaces genome-linter (2026-11)
 
 ### Added

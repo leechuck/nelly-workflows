@@ -34,7 +34,7 @@ requirements:
       ACMG_LLM_API_KEY: $(inputs.llm_api_key)
       ACMG_LLM_MAX_TOKENS: $(String(inputs.llm_max_tokens))
   DockerRequirement:
-    dockerPull: 'nelly-acmg-agent:v2'
+    dockerPull: 'nelly-acmg-agent:v3'
 arguments:
   # VEP-annotated mini-VCF from the vep-candidates step: the ACMG evidence
   # builder's primary annotation source (consequence, MANE/HGVS, AFs).
