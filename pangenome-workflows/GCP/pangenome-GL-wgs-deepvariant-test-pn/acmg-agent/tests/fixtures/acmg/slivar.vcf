@@ -1,0 +1,24 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr1,length=248956422>
+##contig=<ID=chr3,length=198295559>
+##contig=<ID=chr7,length=159345973>
+##contig=<ID=chr8,length=145138636>
+##contig=<ID=chr9,length=138394717>
+##contig=<ID=chr15,length=101991189>
+##contig=<ID=chr17,length=83257441>
+##contig=<ID=chr19,length=58617616>
+##contig=<ID=chr22,length=50818468>
+##INFO=<ID=gnomad_popmax_af,Number=1,Type=Float,Description="gnomAD popmax AF">
+##INFO=<ID=gnomad_nhomalt,Number=1,Type=Integer,Description="gnomAD number of homozygotes">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	sample
+chr1	1000000	rs1000001	A	G	50	PASS	gnomad_popmax_af=0.12;gnomad_nhomalt=1200	GT	0/1
+chr3	196810597	.	CGT	C	55	PASS	gnomad_popmax_af=0.0;gnomad_nhomalt=0	GT	0/1
+chr7	117559590	.	C	T	60	PASS	gnomad_popmax_af=0.0;gnomad_nhomalt=0	GT	0/1
+chr8	144547663	rs769507128	AGGACATGGCATCCTCCTG	A	48	PASS	gnomad_popmax_af=0.0112587;gnomad_nhomalt=8	GT	0/1
+chr9	4719176	rs141473413	C	T	58	PASS	gnomad_popmax_af=0.000185;gnomad_nhomalt=0	GT	0/1
+chr15	72346234	rs147324677	C	G	65	PASS	gnomad_popmax_af=6.3013897e-6;gnomad_nhomalt=0	GT	1/1
+chr17	7673802	.	G	T	52	PASS	gnomad_popmax_af=0.0;gnomad_nhomalt=0	GT	0/1
+chr19	4557189	.	TG	T	54	PASS	gnomad_popmax_af=0.0;gnomad_nhomalt=0	GT	0/1
+chr19	54747378	rs35719926	C	T	45	PASS	gnomad_popmax_af=0.0187711;gnomad_nhomalt=25	GT	1/1
+chr22	25000000	.	G	A	40	PASS	.	GT	0/1

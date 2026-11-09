@@ -1,0 +1,23 @@
+[project]
+name = "acmg-agent"
+version = "0.1.0"
+description = "Deterministic ACMG/AMP 2015 + ClinGen SVI classification engine and candidate report CLI"
+requires-python = ">=3.11"
+dependencies = [
+    "pysam",
+]
+
+[project.scripts]
+acmg-agent = "acmg_agent.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

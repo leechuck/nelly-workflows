@@ -1,0 +1,14 @@
+gene	loeuf	pli	moi	lof_mechanism	clinvar_missense_plp	clinvar_missense_blb	clinvar_lof_plp	hotspot_regions	bs1_threshold
+HEXA	0.73	0.0	AR	yes	60	30	80		0.005
+SEMA6B	0.18	0.99	AD	yes	15	10	45		0.0001
+PAK2	0.12	1.00	AD	yes	20	8	30		0.0001
+LAMA5	0.45	0.01	AR	yes	25	40	35		0.005
+PKD1	0.15	1.00	AD	yes	120	90	250		0.0005
+AK3	0.65	0.02	AR	yes	5	4	8		0.005
+RTEL1	0.52	0.01	AR	yes	35	25	50		0.005
+KIR2DL3	1.20	0.00	AR	no	1	15	0		0.01
+IRF2BPL	0.14	0.99	AD	yes	8	3	40		0.0001
+TP53	0.22	0.98	AD	yes	300	20	180	chr17:7673700-7675200	0.0001
+CFTR	0.58	0.00	AR	yes	150	25	300	chr7:117559500-117559650	0.005
+COMM1	0.95	0.00	AR	no	2	20	1		0.01
+HTT	0.16	1.00	AD	no	10	15	5		0.0001
