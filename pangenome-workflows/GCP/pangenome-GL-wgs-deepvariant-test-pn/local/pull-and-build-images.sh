@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Pull all public Docker images required by the modernised nelly-workflows pipeline
-# and build the lab wrapper images (nelly-exomiser:v4 and, once WP4 lands, nelly-acmg-agent:v1).
+# and build the lab wrapper images (nelly-exomiser:v4 and nelly-acmg-agent:v3).
 # Usage: bash local/pull-and-build-images.sh
 set -euo pipefail
 
@@ -25,13 +25,20 @@ PUBLIC_IMAGES=(
 )
 
 echo "[$(date -Is)] Building nelly-exomiser:v4 from $PIPELINE_DIR/exomiser-wrapper/..."
-docker build -t nelly-exomiser:v4 "$PIPELINE_DIR/exomiser-wrapper"
+DOCKER_BUILDKIT=0 docker build -t nelly-exomiser:v4 "$PIPELINE_DIR/exomiser-wrapper"
 
 if [ -f "$PIPELINE_DIR/acmg-agent/Dockerfile" ]; then
-  echo "[$(date -Is)] Building nelly-acmg-agent:v1 from $PIPELINE_DIR/acmg-agent/..."
-  docker build -t nelly-acmg-agent:v1 "$PIPELINE_DIR/acmg-agent"
-else
-  echo "[$(date -Is)] Skipping nelly-acmg-agent:v1 (acmg-agent/Dockerfile not yet merged from WP4)."
+  echo "[$(date -Is)] Building nelly-acmg-agent:v3 from $PIPELINE_DIR/acmg-agent/..."
+  if docker image inspect nelly-acmg-agent:v2 >/dev/null 2>&1; then
+    DOCKER_BUILDKIT=0 docker build -t nelly-acmg-agent:v3 -f - "$PIPELINE_DIR/acmg-agent" <<'EOF'
+FROM nelly-acmg-agent:v2
+COPY acmg_agent /app/acmg_agent
+ENV PYTHONPATH=/app ACMG_MODEL_PATH=/model/model.gguf ACMG_LLM_BACKEND=llama
+CMD ["python"]
+EOF
+  else
+    DOCKER_BUILDKIT=0 docker build -t nelly-acmg-agent:v3 "$PIPELINE_DIR/acmg-agent"
+  fi
 fi
 
 for img in "${PUBLIC_IMAGES[@]}"; do
