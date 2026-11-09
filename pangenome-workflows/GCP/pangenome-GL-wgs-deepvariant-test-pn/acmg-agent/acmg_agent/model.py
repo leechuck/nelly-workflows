@@ -58,6 +58,10 @@ class Evidence:
     clinvar_lof_plp: int | None = None
     alphamissense: float | None = None
     protein_length: int | None = None
+    max_af_source: str | None = None
+    max_af_any_pop: float | None = None
+    max_af_any_pop_source: str | None = None
+    max_af_any_pop_pop: str | None = None
 
 
 @dataclass
