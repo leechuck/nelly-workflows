@@ -209,9 +209,9 @@ def build_evidence(
         in_hotspot = None
 
     other_vars = _collect_other_vars_in_gene(gene, chrom, pos, ref, alt, variants_rows, clinvar)
-    human_pheno_score = parse_float(candidate.get("human_pheno_score"))
+    human_pheno_score = parse_float(candidate.get("pheno_score"))
     if human_pheno_score is None:
-        human_pheno_score = parse_float(candidate.get("pheno_score"))
+        human_pheno_score = parse_float(candidate.get("human_pheno_score"))
 
     return Evidence(
         gene=gene,
