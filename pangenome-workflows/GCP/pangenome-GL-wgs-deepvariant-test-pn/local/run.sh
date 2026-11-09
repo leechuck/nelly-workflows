@@ -114,12 +114,27 @@ SAMPLER_PID=$!
 
 echo "[$(date -Is)] Starting cwltool (HOST=$HOST): workflow=$WORKFLOW inputs=$INPUTS_JSON outdir=$OUTDIR"
 "$PYTHON" -c '
-import sys, cwltool.job, cwltool.main
+import os, sys, cwltool.job, cwltool.main, cwltool.pathmapper
 _orig_init = cwltool.job.JobBase.__init__
 def _init_with_net(self, *args, **kwargs):
     _orig_init(self, *args, **kwargs)
     self.networkaccess = True
 cwltool.job.JobBase.__init__ = _init_with_net
+
+_orig_visit = cwltool.pathmapper.PathMapper.visit
+def _visit_with_fasta_sec(self, obj, stagedir, basedir, copy=False, staged=False):
+    if isinstance(obj, dict) and obj.get("class") == "File" and obj.get("basename") == "fastafile" and not obj.get("secondaryFiles"):
+        loc = obj.get("location", "")
+        path = loc[7:] if loc.startswith("file://") else loc
+        secs = []
+        for ext in (".fai", ".gzi"):
+            sp = path + ext
+            if os.path.exists(sp):
+                secs.append({"class": "File", "location": "file://" + sp, "basename": "fastafile" + ext})
+        if secs:
+            obj["secondaryFiles"] = secs
+    return _orig_visit(self, obj, stagedir, basedir, copy=copy, staged=staged)
+cwltool.pathmapper.PathMapper.visit = _visit_with_fasta_sec
 sys.exit(cwltool.main.run())
 ' \
   --parallel \

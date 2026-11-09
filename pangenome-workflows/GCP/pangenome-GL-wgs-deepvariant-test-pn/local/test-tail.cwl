@@ -22,9 +22,23 @@ inputs:
     type: string
     default: sample
   normalized_vcf:
-    type: File
+    type: File?
     secondaryFiles:
       - .tbi
+  dv_vcf:
+    type: File?
+    secondaryFiles:
+      - .tbi
+  ref:
+    type: File?
+    secondaryFiles:
+      - .fai
+  combined_vcf_name:
+    type: string
+    default: combined.vcf.gz
+  normalized_vcf_name:
+    type: string
+    default: normalized.vcf.gz
   eh_vcf:
     type: File
     secondaryFiles:
@@ -159,6 +173,24 @@ outputs:
     outputSource: acmg-agent/acmg_report
 
 steps:
+  bcftools-concat:
+    when: $(inputs.vcf_a != null)
+    in:
+      vcf_a: dv_vcf
+      vcf_b: eh_vcf
+      output_name: combined_vcf_name
+    out: [combined_vcf]
+    run: ../bcftools-concat.cwl
+
+  bcftools-norm:
+    when: $(inputs.input_vcf != null)
+    in:
+      input_vcf: bcftools-concat/combined_vcf
+      ref: ref
+      output_name: normalized_vcf_name
+    out: [normalized_vcf]
+    run: ../bcftools-norm.cwl
+
   phenofrommetadata:
     in:
       metadata: metadata
@@ -168,7 +200,11 @@ steps:
 
   exclude-eh-regions:
     in:
-      input_vcf: normalized_vcf
+      input_vcf:
+        source:
+          - normalized_vcf
+          - bcftools-norm/normalized_vcf
+        pickValue: first_non_null
       eh_vcf: eh_vcf
     out: [filtered_vcf]
     run: ../exclude-eh-regions.cwl
@@ -176,7 +212,11 @@ steps:
   slivar:
     in:
       slivar_gnomad: slivar_gnomad
-      slivar_input: normalized_vcf
+      slivar_input:
+        source:
+          - normalized_vcf
+          - bcftools-norm/normalized_vcf
+        pickValue: first_non_null
       slivar_info: slivar_info
       slivar_sample_expr: slivar_sample_expr
     out: [slivar_output]

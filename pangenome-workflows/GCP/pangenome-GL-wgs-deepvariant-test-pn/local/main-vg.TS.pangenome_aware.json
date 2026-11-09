@@ -133,9 +133,10 @@
     "class": "File",
     "path": "/data/nelly-local/inputs/acmg/STRchive-loci.json"
   },
-  "acmg_top_candidates": 10,
+  "acmg_top_candidates": 20,
   "llm_backend": "openai",
   "llm_endpoint": "http://unimatrix01.kaust.edu.sa:8000/v1",
   "llm_model": "qwen3.8-27b",
-  "llm_api_key": "FROM-ENV"
+  "llm_api_key": "FROM-ENV",
+  "llm_max_tokens": 4096
 }
