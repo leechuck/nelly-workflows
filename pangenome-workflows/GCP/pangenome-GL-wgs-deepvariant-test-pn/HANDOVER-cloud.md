@@ -337,36 +337,42 @@ done
 
 ### 5.1 Per-Step Resource Allocations and Observed Measurements
 
-Observed metrics combine:
-- Historic cborg runs (26–27 Oct 2026, 10-core / 90 GiB nodes).
-- Workstation `ws` smoke measurements (56 cores, 125 GiB RAM).
-- Phase 1 local tail smoke runs on `cbontsr01` (256 threads, 1 TB RAM, cgroup resource monitoring).
-- WP4b live assessment of `nelly-acmg-agent:v2` against `unimatrix01` `qwen3.8-27b`.
+Every observed measurement in the table below originates from a named, verified source:
+1. **cborg 26–27 Oct 2026 Runs:** Historic production runs of `main-vg.cwl` at commit `00c199d` for Tay-Sachs (`TS`, patient `id: 148`) and Huntington (`HD`, patient `id: 149`) on Arvados `cborg` (10-vcpu / 90 GiB RAM nodes). Wall times were recorded by Arvados `crunch-run`. Peak RSS was **not** recorded by Arvados (only requested RAM was logged); peak RSS is therefore marked *not measured*.
+2. **Workstation `ws` Measurements:** Benchmarks executed on the lab workstation `ws` (56 cores, 125 GiB RAM) during WP1 and WP4b testing:
+   - `kmc`: 2M read pairs (16 threads).
+   - `vg giraffe` 1.78 haplotype sampling: 2M read pairs (10 threads), recording separate index construction time, mapping time, and peak RSS.
+   - `deepvariant` 1.10 and PADV 1.10: `chr20:1-10000000` test slices (8 threads / 4 shards).
+   - `acmg-agent`: live container execution of `nelly-acmg-agent:v2` against `unimatrix01` (`qwen3.8-27b`) reviewing 5 variants.
+3. **`cbontsr01` Phase 1 Tail Smoke Runs:** Local container runs of `local/test-tail.cwl` on `cbontsr01` (`phase1-tail-smoke.md`, cgroup v1 container memory tracking): `phenofrommetadata`, `exclude-eh-regions`, `exomiser` 15.1, `slivar`, and `vep` 116.
+4. **All other cells:** Unmeasured parameters are strictly designated **`not measured — TODO (WP6 phase 2)`**.
 
-| Step Name | Tool CWL | Docker Image | `coresMin` | `ramMin` (MiB) | `tmpdirMin` (MB) | Observed Wall Time | Observed Peak Process RSS | Peak Cgroup Footprint | Sizing Note |
-|---|---|---|---:|---:|---:|---|---:|---:|---|
-| `phenofrommetadata` | `phenofrommetadata.cwl` | `dunglam2k/phenofrommetadata:v1.01` | 1 | 1,024 | — | 1.1 s | <15 MiB | <50 MiB | Lightweight YAML parser |
-| `kmc` | `kmc.cwl` | `coolmaksat/kmc` | 8 | 65,536 | 200,000 | 5.7 s (2M reads) / ~12 min (30x WGS) | 3.8 GiB | 4.2 GiB | Memory scales with k-mer buffer |
-| `vg-paths` | `vg-paths.cwl` | `quay.io/vgteam/vg:v1.78.0` | 10 | 36,864 | — | ~45 s | 2.1 GiB | 2.5 GiB | Extracts reference path list from GBZ |
-| `vg-giraffe-bam` | `vg-giraffe-bam.cwl` | `quay.io/vgteam/vg:v1.78.0` | 10 | 92,160 | 300,000 | 2,350 s (idx) + 14 h (30x map) | **74.24 GiB** | 78.5 GiB | **Pipeline Peak RAM**. Haplotype sampling building personal graph |
-| `samtools-sort` | `samtools-sort.cwl` | `coolmaksat/minimap2-samtools` | 8 | 16,384 | — | ~25 min (30x WGS) | 3.5 GiB | 4.1 GiB | Uses BAM stream |
-| `samtools-index-sorted`| `samtools-index.cwl`| `coolmaksat/minimap2-samtools` | 2 | 4,096 | — | ~3 min | 0.8 GiB | 1.2 GiB | Indexing sorted BAM |
-| `samtools-markdup` | `samtools-markdup.cwl`| `coolmaksat/minimap2-samtools` | 8 | 16,384 | — | ~35 min (30x WGS) | 4.2 GiB | 4.8 GiB | Duplicate marking |
-| `samtools-markdup-index`| `samtools-index.cwl`| `coolmaksat/minimap2-samtools` | 2 | 4,096 | — | ~3 min | 0.8 GiB | 1.2 GiB | Final CRAM index |
-| `deepvariant` | `deepvariant.cwl` | `google/deepvariant:1.10.0` | 8 | 92,160 | — | 291 s (chr20:1-10M) / ~17 h (30x WGS) | 5.25 GiB | 6.1 GiB | Standard WGS mode |
-| `pangenome-aware-deepvariant` | `pangenome-aware-deepvariant.cwl` | `google/deepvariant:pangenome_aware_deepvariant-1.10.0` | 8 | 92,160 | 100,000 | 376 s (chr20:1-10M) / ~18–20 h (30x WGS) | **40.94 GiB** | 43.9 GiB | 4 shards × ~10.2–12.7 GiB each (no `/dev/shm`) |
-| `expansionhunter` | `expansionhunter.cwl` | `dunglam2k/expansionhunter-grch38:v5.0.0`| 8 | 16,384 | — | ~30 min | 3.8 GiB | 4.5 GiB | Repeat expansion profiling |
-| `bcftools-concat` | `bcftools-concat.cwl` | `staphb/bcftools:1.22` | 4 | 8,192 | — | ~45 s | 120 MiB | 350 MiB | Concatenates DV and EH calls |
-| `bcftools-norm` | `bcftools-norm.cwl` | `staphb/bcftools:1.22` | 4 | 8,192 | — | ~12 min | 250 MiB | 600 MiB | Multiallelic splitting and left-alignment |
-| `exclude-eh-regions` | `exclude-eh-regions.cwl`| `staphb/bcftools:1.22` | 2 | 4,096 | — | 8.4–9.4 s | 12.7 MiB | 204.8 MiB | Strips repetitive regions before Exomiser |
-| `slivar` | `slivar.cwl` | `brentp/slivar:v0.3.0` | 1 | 8,192 | — | 167.9 s | 2.53 GiB | 4.86 GiB | Evaluates gnomAD popmax frequency |
-| `vep` (Pass 1) | `vep.cwl` | `ensemblorg/ensembl-vep:release_116.3` | 2 | 8,192 | — | 605 s solo (719 s conc.) | 860.6 MiB | 12.16 GiB (incl cache) | Annotates ~1,000 candidate variants |
-| `exomiser` | `exomiser.cwl` | `nelly-exomiser:v4` | 4 | 32,768 | — | 75.7–76.8 s | 3.58 GiB | 4.49 GiB | Phenotype + variant pathogenicity ranking |
-| `acmg-extract-candidates`| `acmg-extract-candidates.cwl`| `nelly-acmg-agent:v2` | 1 | 2,048 | — | ~3 s | 85 MiB | 150 MiB | Generates candidate mini-VCF (~20–50 vars) |
-| `vep-candidates` (Pass 2)| `vep.cwl` | `ensemblorg/ensembl-vep:release_116.3` | 2 | 8,192 | — | ~20 s | 550 MiB | 2.5 GiB | Fast consequence annotation on mini-VCF |
-| `acmg-agent` | `acmg-agent.cwl` | `nelly-acmg-agent:v2` | 8 | 20,480 | — | 1,437 s (~24 min) via endpoint | 1.2 GiB | 2.1 GiB | Full 28-criteria ClinGen review + LLM |
-| `happy` (GIAB benchmark) | `benchmark/happy.cwl` | `jmcdani20/hap.py:v0.3.12` | 8 | 32,768 | — | ~18 min | 8.5 GiB | 12.0 GiB | vcfeval comparison against GIAB truth |
-| **Full WGS End-to-End** | `main-vg.cwl` | Multi-container | 10 | 92,160 | 500,000 | *TODO (WP6 phase 2)* | **74.24 GiB** | 80.0 GiB | Currently running on IBEX (jobs 55405248/49) |
+| Step Name | Tool CWL | Docker Image | `coresMin` | `ramMin` (MiB) | `tmpdirMin` (MB) | Observed Wall Time (Named Source) | Observed Peak Process RSS (Named Source) | Measurement Status & Sizing Notes |
+|---|---|---|---:|---:|---:|---|---|---|
+| `phenofrommetadata` | `phenofrommetadata.cwl` | `dunglam2k/phenofrommetadata:v1.01` | 1 | 1,024 | — | **1.1 s** (`cbontsr01` Phase 1) | **< 15 MiB** (`cbontsr01` Phase 1) | Cgroup peak < 50 MiB. Lightweight YAML parser. |
+| `kmc` | `kmc.cwl` | `coolmaksat/kmc` | 8 | 65,536 | 200,000 | **5.67 s** on 2M read pairs (`ws` WP1). Full 30x: *not measured — TODO (WP6 phase 2)* | **< 4 GiB** on 2M read pairs (`ws` WP1). Full 30x: *not measured — TODO (WP6 phase 2)* | 29-mer KFF count generation. New step in modernisation. |
+| `vg-paths` | `vg-paths.cwl` | `quay.io/vgteam/vg:v1.78.0` | 10 | 36,864 | — | **0:57** (57 s) (cborg 26–27 Oct, vg 1.54) | *not measured — TODO (WP6 phase 2)* | Arvados recorded requested RAM (36 GiB), not peak RSS. |
+| `vg-giraffe-bam` | `vg-giraffe-bam.cwl` | `quay.io/vgteam/vg:v1.78.0` | 10 | 92,160 | 300,000 | **2,350 s** (idx build) + **152 s** (2M map) (`ws` WP1, 10 cores). Full 30x map: *not measured — TODO (WP6 phase 2)* (historical vg 1.54 without haplotype sampling was **14:30** TS / **13:38** HD on cborg) | **74.24 GiB** (`ws` WP1 smoke, during personalised index build) | **Pipeline Peak RAM**. Personalised index generation peaks at 74.24 GiB. Full-genome mapping time under vg 1.78 is not yet measured. |
+| `samtools-sort` | `samtools-sort.cwl` | `coolmaksat/minimap2-samtools` | 8 | 16,384 | — | **2:22** TS / **2:17** HD (cborg 26–27 Oct, 8 cores) | *not measured — TODO (WP6 phase 2)* | Sorts Giraffe BAM stream. Peak RSS not recorded on cborg. |
+| `samtools-index-sorted` | `samtools-index.cwl` | `coolmaksat/minimap2-samtools` | 2 | 4,096 | — | **0:05–0:07** (5–7 min) (cborg 26–27 Oct) | *not measured — TODO (WP6 phase 2)* | Indexes sorted BAM prior to duplicate marking. |
+| `samtools-markdup` | `samtools-markdup.cwl` | `coolmaksat/minimap2-samtools` | 8 | 16,384 | — | **3:35** TS / **3:36** HD (cborg 26–27 Oct, 8 cores) | *not measured — TODO (WP6 phase 2)* | Duplicate marking and CRAM emission. Peak RSS not recorded on cborg. |
+| `samtools-markdup-index`| `samtools-index.cwl` | `coolmaksat/minimap2-samtools` | 2 | 4,096 | — | **0:05–0:07** (5–7 min) (cborg 26–27 Oct) | *not measured — TODO (WP6 phase 2)* | Final CRAM index generation (.crai). |
+| `deepvariant` (standard) | `deepvariant.cwl` | `google/deepvariant:1.10.0` | 8 | 92,160 | — | **291.5 s** (4m 51s) on chr20:1-10M (`ws` WP1, 8 cores). Full 30x: *not measured — TODO (WP6 phase 2)* (historical DV 1.6 was **17:17** TS / **17:28** HD on cborg) | **5.25 GiB** on chr20:1-10M (`ws` WP1). Full 30x: *not measured — TODO (WP6 phase 2)* | Standard DeepVariant WGS mode. Full 30x WGS runtime under DV 1.10 is not yet measured. |
+| `pangenome-aware-deepvariant` | `pangenome-aware-deepvariant.cwl` | `google/deepvariant:pangenome_aware_deepvariant-1.10.0` | 8 | 92,160 | 100,000 | **376.6 s** (6m 16s) on chr20:1-10M (`ws` WP1, 4 shards). Full 30x: *not measured — TODO (WP6 phase 2)* | **40.94 GiB** on chr20:1-10M across 4 shards (`ws` WP1, 12.7 GiB/shard heap) | Runs without `/dev/shm`. Graph loaded into shard heap. Full 30x WGS runtime is not yet measured. |
+| `expansionhunter` | `expansionhunter.cwl` | `dunglam2k/expansionhunter-grch38:v5.0.0` | 8 | 16,384 | — | **0:05** (5 min) (cborg 26–27 Oct) | *not measured — TODO (WP6 phase 2)* | Repeat expansion caller. Peak RSS not recorded on cborg. |
+| `bcftools-concat` | `bcftools-concat.cwl` | `staphb/bcftools:1.22` | 4 | 8,192 | — | **0:00:43** (43 s) (cborg 26–27 Oct) | *not measured — TODO (WP6 phase 2)* | Concatenates DV small variants and EH repeat calls. |
+| `bcftools-norm` | `bcftools-norm.cwl` | `staphb/bcftools:1.22` | 4 | 8,192 | — | **0:01:30** (1m 30s) (cborg 26–27 Oct) | *not measured — TODO (WP6 phase 2)* | Splits multiallelic sites and left-aligns against `hg38.fa`. |
+| `exclude-eh-regions` | `exclude-eh-regions.cwl` | `staphb/bcftools:1.22` | 2 | 4,096 | — | **8.4 s** HD / **9.4 s** TS (`cbontsr01` Phase 1; cborg historical was **0:00:29–0:01:25**) | **12.4–12.7 MiB** (`cbontsr01` Phase 1) | Cgroup peak ~200 MiB. Strips repeat loci before Exomiser. |
+| `slivar` | `slivar.cwl` | `brentp/slivar:v0.3.0` | 1 | 8,192 | — | **167.9 s** (~2.8 min) (`cbontsr01` Phase 1; cborg historical was **0:04–0:05**) | **2,534 MiB** (~2.5 GiB) (`cbontsr01` Phase 1) | Cgroup peak 4.1–4.9 GiB. Evaluates gnomAD popmax frequency. |
+| `vep` (Pass 1) | `vep.cwl` | `ensemblorg/ensembl-vep:release_116.3` | 2 | 8,192 | — | **605 s** solo / **719 s** concurrent (`cbontsr01` Phase 1; cborg historical VEP 102 was **0:17–0:19**) | **837.5–860.6 MiB** (`cbontsr01` Phase 1) | Cgroup peak 4.9–12.2 GiB (includes OS buffer cache). Annotates ~1,000 slivar candidate variants. |
+| `exomiser` | `exomiser.cwl` | `nelly-exomiser:v4` | 4 | 32,768 | — | **75.7 s** HD / **76.8 s** TS (`cbontsr01` Phase 1, Exomiser 15.1; cborg historical Exomiser 15.0 was **0:24–0:25**) | **3,545–3,585 MiB** (~3.5 GiB) (`cbontsr01` Phase 1) | Cgroup peak 4.2–4.5 GiB. Prioritises variants via phenotype similarity and rarity (data 2512). |
+| `acmg-extract-candidates` | `acmg-extract-candidates.cwl` | `nelly-acmg-agent:v2` | 1 | 2,048 | — | *not measured — TODO (WP6 phase 2)* | *not measured — TODO (WP6 phase 2)* | Generates mini-VCF (~20–50 variants) for Pass 2 VEP. Not run in Phase 1 standalone tail. |
+| `vep-candidates` (Pass 2) | `vep.cwl` | `ensemblorg/ensembl-vep:release_116.3` | 2 | 8,192 | — | *not measured — TODO (WP6 phase 2)* | *not measured — TODO (WP6 phase 2)* | Second VEP pass over candidate mini-VCF. Not run in Phase 1 standalone tail. |
+| `acmg-agent` | `acmg-agent.cwl` | `nelly-acmg-agent:v2` | 8 | 20,480 | — | **1,437 s** (~23.95 min) against `unimatrix01` endpoint (`ws` WP4b report) | **~1.2 GiB** (`ws` WP4b report) | Full 28-criteria ClinGen SVI evaluation + LLM review of 5 variants. Fallback CPU GGUF took 3,480 s and timed out. |
+| `happy` (GIAB benchmark) | `benchmark/happy.cwl` | `jmcdani20/hap.py:v0.3.12` | 8 | 32,768 | — | *not measured — TODO (WP6 phase 2)* | *not measured — TODO (WP6 phase 2)* | Full-genome GIAB benchmark. Small 500 kb slice smoke-tested on `ws` (WP2). |
+| `align-and-call.cwl` (Sub-workflow) | `align-and-call.cwl` | Multi-container | 10 | 92,160 | 300,000 | *not measured — TODO (WP6 phase 2)* (currently executing on KAUST IBEX as Slurm jobs `55405589` for TS and `55405590` for HD) | **74.24 GiB** (measured during Giraffe index construction on `ws`; full sub-workflow peak RSS is *not measured — TODO (WP6 phase 2)*) | Sub-workflow executing KMC $\rightarrow$ Giraffe 1.78 $\rightarrow$ samtools $\rightarrow$ DV/PADV + ExpansionHunter. |
+| **Full WGS End-to-End (`main-vg.cwl`)** | `main-vg.cwl` | Multi-container | 10 | 92,160 | 500,000 | *not measured — TODO (WP6 phase 2)* (note: IBEX jobs `55405589` and `55405590` run `align-and-call.cwl`, not full `main-vg.cwl`; full end-to-end WGS runtime under the modernised stack has not yet been measured) | *not measured — TODO (WP6 phase 2)* (expected to be bounded by the Giraffe index build peak of 74.24 GiB) | Historical full WGS on cborg 26–27 Oct was ~35–37 hours total wall time with vg 1.54 + DV 1.6. Modern full WGS runtime is pending WP6 Phase 2 completion. |
+| `genomelinter` (legacy) | `genome-linter.cwl` | `dunglam2k/genome-linter:v1.01` | 1 | 1,024 | — | **0:02–0:03** (2–3 min) (cborg 26–27 Oct) | *not measured — TODO (WP6 phase 2)* | Retired legacy step; replaced by `acmg-agent`. Listed for baseline reference. |
 
 ### 5.2 Recommended Cloud Instance Types
 
@@ -486,7 +492,7 @@ The ACMG agent (`acmg-agent.cwl`) reviews candidate variants through a bounded t
 4. **WP4b Container Live Execution:**
    - `nelly-acmg-agent:v2` executed on `ws` against `unimatrix01` in 1,437 s (23.95 min), reviewing all 5 candidates with `agent_status: ok`.
 5. **Phase 2 Status:**
-   - Alignment and variant calling jobs (`align-TS-standard`, Slurm ID `55405248`; `align-HD-standard`, Slurm ID `55405249`) currently executing on KAUST IBEX. Full WGS e2e wall time will be updated upon job completion.
+   - Alignment and variant calling jobs (`align-TS-standard`, Slurm ID `55405589`; `align-HD-standard`, Slurm ID `55405590`) running `align-and-call.cwl` are currently executing on KAUST IBEX. Note that these jobs execute the `align-and-call.cwl` sub-workflow, not the full `main-vg.cwl` pipeline; full WGS end-to-end wall time and resource metrics under the modernised stack remain *not measured — TODO (WP6 phase 2)*.
 
 ### 7.2 Known Gotchas for Cloud Deployments (from `notes-cwl-gotchas.md`)
 
