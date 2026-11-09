@@ -43,7 +43,10 @@ EH_PATHO_THRESHOLDS = {
 }
 
 
-def read_eh(path):
+from acmg_agent.repeats import classify_repeat
+
+
+def read_eh(path, strchive_loci=None):
     """Parse an ExpansionHunter JSON; return loci whose larger allele reaches the
     pathogenic threshold, as grounded evidence the LLM can cite."""
     flags = []
@@ -58,6 +61,17 @@ def read_eh(path):
     for locus in (doc.get("LocusResults") or {}).values():
         for v in (locus.get("Variants") or {}).values():
             vid = v.get("VariantId") or ""
+            if strchive_loci is not None:
+                call = classify_repeat(v, strchive_loci)
+                if call.tier == "pathogenic":
+                    pmin = (call.ranges.get("pathogenic") or (0, None))[0] or 0
+                    flags.append({
+                        "gene": call.gene, "disease": call.disease, "moi": call.moi,
+                        "genotype": call.genotype, "max_allele": call.max_allele, "threshold": pmin,
+                        "unit": v.get("RepeatUnit") or "", "region": v.get("ReferenceRegion") or "",
+                        "ci": call.ci,
+                    })
+                continue
             thr = EH_PATHO_THRESHOLDS.get(vid)
             if not thr:
                 continue
@@ -537,7 +551,7 @@ def read_tsv(path: str | Path) -> list[dict]:
         return list(csv.DictReader(f, delimiter="\t"))
 
 
-def read_eh_expansions(path: str | Path | None) -> list[dict]:
+def read_eh_expansions(path: str | Path | None, strchive_loci: dict | None = None) -> list[dict]:
     if not path or not Path(path).exists():
         return []
     with open(path) as f:
@@ -545,14 +559,41 @@ def read_eh_expansions(path: str | Path | None) -> list[dict]:
     results = []
     for locus_id, locus in data.get("LocusResults", {}).items():
         for var_id, var in locus.get("Variants", {}).items():
-            if var_id != locus_id and var_id not in EH_LOCI:
-                continue
             gt = var.get("Genotype", "")
             ci = var.get("GenotypeConfidenceInterval", "")
             if not gt:
                 continue
             alleles = [int(a) for a in gt.split("/") if a.isdigit()]
             if not alleles:
+                continue
+            if strchive_loci is not None:
+                call = classify_repeat(var, strchive_loci)
+                if call.tier == "unknown_locus":
+                    continue
+                status_map = {
+                    "pathogenic": "pathogenic_range",
+                    "intermediate": "intermediate_or_carrier",
+                    "normal": "normal",
+                }
+                norm_max = (call.ranges.get("benign") or (None, 0))[1] or 0
+                path_min = (call.ranges.get("pathogenic") or (0, None))[0] or 0
+                results.append({
+                    "gene": call.gene,
+                    "genotypes": gt,
+                    "ci": ci,
+                    "allele1": alleles[0],
+                    "allele2": alleles[-1],
+                    "max_allele": call.max_allele,
+                    "normal_max": norm_max,
+                    "pathogenic_min": path_min,
+                    "moi": call.moi,
+                    "disease": call.disease,
+                    "status": status_map.get(call.tier, "normal"),
+                    "tier": call.tier,
+                    "ranges": call.ranges,
+                })
+                continue
+            if var_id != locus_id and var_id not in EH_LOCI:
                 continue
             max_al = max(alleles)
             min_al = min(alleles)
@@ -562,10 +603,13 @@ def read_eh_expansions(path: str | Path | None) -> list[dict]:
             eff_al = min_al if (moi == "AR" and len(alleles) == 2) else max_al
             if eff_al >= path_min:
                 status = "pathogenic_range"
+                tier_str = "pathogenic"
             elif max_al > norm_max:
                 status = "intermediate_or_carrier"
+                tier_str = "intermediate"
             else:
                 status = "normal"
+                tier_str = "normal"
             results.append({
                 "gene": locus_id,
                 "genotypes": gt,
@@ -578,6 +622,7 @@ def read_eh_expansions(path: str | Path | None) -> list[dict]:
                 "moi": moi,
                 "disease": disease,
                 "status": status,
+                "tier": tier_str,
             })
     order = {"pathogenic_range": 0, "intermediate_or_carrier": 1, "normal": 2}
     results.sort(key=lambda r: (order[r["status"]], -r["max_allele"], r["gene"]))

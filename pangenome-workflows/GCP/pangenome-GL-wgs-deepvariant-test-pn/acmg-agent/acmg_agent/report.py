@@ -108,6 +108,11 @@ def build_deterministic_narrative(
 
 def render_markdown(data: dict) -> str:
     lines: list[str] = ["# ACMG/AMP Variant Interpretation Report", ""]
+    if data.get("strchive_used") is False:
+        lines.append(
+            "_Note: `--strchive-json` was not provided; repeat expansion thresholds fell back to the built-in legacy table._"
+        )
+        lines.append("")
 
     narrative = data.get("narrative") or ""
     lines.append("## 1. Leading Conclusion")
