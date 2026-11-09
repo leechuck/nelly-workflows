@@ -69,18 +69,20 @@ Following merge `87fbe22` (WP4/WP4b), `local/test-tail.cwl` was extended with `a
 | `acmg-extract-candidates` | HD | `074e626f386c` | `nelly-acmg-agent:v2` | 1.0 | 23.8 | 23.8 |
 | `vep-candidates` (mini-VCF) | TS | `e76e770f93c8` | `ensemblorg/ensembl-vep:release_116.3` | 1.3 (4.0 cwltool) | 254.3 | 257.6 |
 | `vep-candidates` (mini-VCF) | HD | `32acb81713a8` | `ensemblorg/ensembl-vep:release_116.3` | 1.3 (4.0 cwltool) | 215.5 | 219.2 |
-| `acmg-agent` (live Qwen3.8-27B) | TS | `f18e8c1970d7` | `nelly-acmg-agent:v2` | **1603.1** | **71.2** | **73.2** |
-| `acmg-agent` (live Qwen3.8-27B) | HD | `9192a0344c38` | `nelly-acmg-agent:v2` | **1703.2** | **71.1** | **73.2** |
+| `acmg-agent` (live Qwen3.8-27B, `:v2`) | TS | `f18e8c1970d7` | `nelly-acmg-agent:v2` | **1603.1** | **71.2** | **73.2** |
+| `acmg-agent` (live Qwen3.8-27B, `:v2`) | HD | `9192a0344c38` | `nelly-acmg-agent:v2` | **1703.2** | **71.1** | **73.2** |
+| **`acmg-agent` (live Qwen3.8-27B, `:v3` R6 fix)** | **TS** | **`d63845ae0d62`** | **`nelly-acmg-agent:v3`** | **2199.6** | **71.3** | **73.3** |
+| **`acmg-agent` (live Qwen3.8-27B, `:v3` R6 fix)** | **HD** | **`a6b1cd083f7f`** | **`nelly-acmg-agent:v3`** | **2098.0** | **71.1** | **73.1** |
 | `acmg-agent` (`--net=none` fallback) | TS / HD | `e8ad4f8aec7c` / `4124d1b694c8` | `nelly-acmg-agent:v2` | 15.8 / 15.9 | 71.3 / 71.1 | 73.3 / 73.1 |
 
-## 4. Output & Grounding Verification
+## 4. Output & Grounding Verification (`nelly-acmg-agent:v3` — R6 Non-Bottlenecked Popmax Fix)
 
-### 4.1 Tay-Sachs (`tail-TS-acmg`)
+### 4.1 Tay-Sachs (`tail-TS-acmg`, `nelly-acmg-agent:v3`)
 - **Exomiser 15.1.0 + 2512 ranking (`exomiser.genes.tsv`)**:
   - Rank #1: `SEMA6B` (`AD`, combined `0.7898`, pheno `0.6717`, variant `1.0000`)
   - **Rank #2: `HEXA` (`AR`, combined `0.5359`, pheno `0.5450`, variant `1.0000`, `WHITELIST_VARIANT=1`)** — meets top-2 gate.
-- **`acmg-assessment.json` & `acmg-report.md`**:
-  - **Leading candidate**:
+- **`acmg-assessment.json` & `acmg-report.md` (`nelly-acmg-agent:v3`, commit `c521f6a`)**:
+  - **Leading candidate (`Pathogenic`, 10 points, `conflict: false`)**:
     ```json
     {
       "kind": "snv",
@@ -90,18 +92,22 @@ Following merge `87fbe22` (WP4/WP4b), `local/test-tail.cwl` was extended with `a
       "zygosity": "hom",
       "moi": "AR",
       "disease": "GM2-gangliosidosis, several forms (OMIM:272800)",
-      "classification": "Likely pathogenic",
-      "points": 8,
-      "rule_based_class": "VUS",
-      "conflict": true
+      "classification": "Pathogenic",
+      "points": 10,
+      "rule_based_class": "Pathogenic",
+      "conflict": false
     }
     ```
-  - **LLM status**: `{"backend": "openai", "model": "qwen3.8-27b", "status": "partial"}` — 4 of the 5 selected review candidates (`#1 HEXA`, `#2 SEMA6B`, `#3 PAK2`, `#5 RTEL1` — **including the leading candidate `HEXA`**) completed with `agent_status == "ok"` and full grounded LLM `agent_rationale` and `agent_narrative`; `#4 PKD1` hit the per-variant tool-call/validation budget and fell back cleanly to its deterministic classification (`Likely pathogenic`, 8 pts), resulting in run-level `status: "partial"`.
+  - **R6 `PM2` & `PM3` evaluation on `HEXA` in `acmg-report.md` and `acmg-assessment.json`**:
+    - `PVS1`: `met` (`very_strong`) — `splice_donor_variant in LoF-mechanism gene (not in NMD-escape region)`
+    - **`PM2`: `met` (`supporting`) — `max AF 6.30e-06 (gnomADe_NFE_AF) < 1e-04 for AR (PM2_Supporting per ClinGen SVI; founder-population AF 0.0033 (ASJ))`**
+    - **`PM3`: `met` (`supporting`) — `homozygous rare variant in recessive gene (0.5 pts -> PM3_Supporting per ClinGen SVI)`**
+  - **LLM status**: `{"backend": "openai", "model": "qwen3.8-27b", "status": "partial"}` (`errors: []`). (In the preceding `:v2` run before R6 promoted additional candidates into tier 1/2, 4/5 candidates including `HEXA` completed within the per-variant `360 s` budget; in `:v3` with TS and HD sharing the Unimatrix endpoint across the expanded tier 1/2 review list, `#2 SEMA6B` and `#3 PAK2` completed with `agent_rationale` while candidates exceeding `360 s` fell back cleanly to the R6 deterministic classification.)
   - **Grounding check**: Programmatic token intersection against all HGNC symbols in `gene_table.tsv` (19,212 genes) confirmed **0 out-of-pack genes** in `acmg-report.md` and all `agent_rationale` / `agent_narrative` strings.
 
-### 4.2 Huntington (`tail-HD-acmg`)
+### 4.2 Huntington (`tail-HD-acmg`, `nelly-acmg-agent:v3`)
 - **`acmg-assessment.json` & `acmg-report.md`**:
-  - **Leading candidate**:
+  - **Leading candidate (`HTT` repeat expansion, unchanged)**:
     ```json
     {
       "kind": "expansion",
@@ -124,6 +130,6 @@ Following merge `87fbe22` (WP4/WP4b), `local/test-tail.cwl` was extended with `a
       "status": "pathogenic_range"
     }
     ```
-  - **LLM status**: **`{"backend": "openai", "model": "qwen3.8-27b", "status": "ok"}`** — **all 5 selected review candidates (`#1 SEMA6B`, `#2 ABCA7`, `#3 PKD1`, `#4 PAK2`, `#5 RTEL1`) succeeded with `agent_status == "ok"`!**
-  - **Validated LLM adjustments**: On `PKD1` and `RTEL1`, the LLM agent legitimately adjusted `BP2` from `met (supporting)` to `not_met` (`adjusted_by_agent: ["BP2"]`, changing points from `8` to `9`, `Likely pathogenic`) with a contract-validated reason citing the `moi` (`AD`) and `other_var_in_gene` evidence fields (`single-sample data cannot establish in-trans configuration`).
+  - **LLM status**: `{"backend": "openai", "model": "qwen3.8-27b", "status": "partial"}` in `:v3` (`{"backend": "openai", "model": "qwen3.8-27b", "status": "ok"}` in `:v2` where all 5/5 candidates succeeded within `360 s`).
+  - **Validated LLM adjustments**: On `PKD1` (`#3`), the LLM agent legitimately adjusted `BP2` from `met (supporting)` to `not_met` (`adjusted_by_agent: ["BP2"]`, changing points from `8` to `9`, `Likely pathogenic`) with a contract-validated reason citing the `moi` (`AD`) and `other_var_in_gene` evidence fields.
   - **Grounding check**: Programmatic token intersection against `gene_table.tsv` confirmed **0 out-of-pack genes** in `acmg-report.md` and all `agent_rationale` / `agent_narrative` strings.
