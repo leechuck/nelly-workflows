@@ -1,0 +1,47 @@
+input_name	type	default_value	source_bundle_or_collection	description
+ref_prefix	string	"GRCh38"	N/A	Reference prefix for graph paths
+sample_name	string	"sample"	Patient Metadata	Sample identifier across VCF and BAM read groups
+graph	File	(required)	KSA_GRCh38_pangenome (1d5ad2aefb6e809dddaffea3a0558415+5657/ksa_hg38.gbz)	Saudi pangenome graph in GBZ format
+hapl	File	(required)	ksa_hg38-vg1.78-indexes (d704d713f7039bbc4026d55fafec7c33+2743/ksa_hg38.hapl)	Rebuilt vg 1.78 haplotype index for haplotype sampling
+dv_mode	string	"standard"	Configuration ("standard" | "pangenome_aware")	DeepVariant engine selection
+ref	File (sec: .fai)	(required)	KSA_GRCh38_pangenome (1d5ad2aefb6e809dddaffea3a0558415+5657/hg38.fa)	UCSC GRCh38 chr-named reference FASTA + index
+reads1	File	(required)	Patient WGS Collection (reads1.fastq.gz)	Forward paired-end FASTQ (.fastq.gz)
+reads2	File	(required)	Patient WGS Collection (reads2.fastq.gz)	Reverse paired-end FASTQ (.fastq.gz)
+aligned_bam_output	string	"aligned.bam"	N/A	Intermediate BAM output filename
+dv_model_type	string	"WGS"	Configuration	DeepVariant model type (WGS)
+dv_output_vcf	string	"variants.dv.vcf.gz"	N/A	DeepVariant output VCF filename
+dv_output_gvcf	string	"variants.dv.gvcf.gz"	N/A	DeepVariant output gVCF filename
+eh_variant_catalog	File?	null (optional)	Baked into image ( dunglam2k/expansionhunter-grch38:v5.0.0)	Optional custom ExpansionHunter repeat catalog
+eh_output_prefix	string	"eh_repeats"	N/A	ExpansionHunter output prefix
+combined_vcf_name	string	"combined.vcf.gz"	N/A	bcftools-concat output filename
+normalized_vcf_name	string	"normalized.vcf.gz"	N/A	bcftools-norm output filename
+slivar_gnomad	File	(required)	slivar_vep_fixed_files (148bcb74e5d8268ac486d315e657f70b+3240/gnomad.hg38.genomes.v3.fix.zip)	gnomAD v3 genome frequencies zip for slivar
+slivar_info	string	"INFO.gnomad_popmax_af < 0.001 && INFO.gnomad_nhomalt <= 3 && variant.FILTER == 'PASS'"	main-vg.cwl default	Rare-variant population frequency gate
+slivar_sample_expr	string	"high_quality:sample.GQ >= 20 && sample.DP >= 10 && (sample.het || sample.hom_alt)"	main-vg.cwl default	Genotype quality gate
+vep_assembly	string	"GRCh38"	N/A	Assembly name for VEP
+vep_output_file	string	"vep-output.vcf.gz"	N/A	VEP first-pass output VCF filename
+pavs_custom_file	File (sec: .tbi)	(required)	slivar_vep_fixed_files (148bcb74e5d8268ac486d315e657f70b+3240/sorted.pavs.plugin.38.vcf.gz)	PAVS custom plugin VCF + index
+pavs_custom_args	string	"PAVS,vcf,exact"	main-vg.cwl default	PAVS custom plugin argument string
+go_custom_file	File (sec: .tbi)	(required)	slivar_vep_fixed_files (148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.go.bed.gz)	GO custom plugin BED + index
+go_custom_args	string	"GO_CLASSES,bed,overlap"	main-vg.cwl default	GO custom plugin argument string
+hpo_custom_file	File (sec: .tbi)	(required)	slivar_vep_fixed_files (148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.pheno.bed.gz)	HPO custom plugin BED + index
+hpo_custom_args	string	"PHENOTYPE,bed,overlap"	main-vg.cwl default	HPO custom plugin argument string
+ppi_custom_file	File (sec: .tbi)	(required)	slivar_vep_fixed_files (148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.ppi.bed.gz)	PPI custom plugin BED + index
+ppi_custom_args	string	"PPI,bed,overlap"	main-vg.cwl default	PPI custom plugin argument string
+vep_dir	Directory	(required)	vep-116-GRCh38-cache (8afec8cdb796367144fa2bcec3a3dc59+624229)	Ensembl VEP 116 GRCh38 indexed cache directory
+exomiser_data	Directory	(required)	exomiser-2512-hg38-phenotype-bundle (00cbcbd45419c2f051889639deff3431+39145)	Exomiser data 2512 directory (contains data/2512_hg38 + data/2512_phenotype)
+exomiser_assembly	string	"hg38"	main-vg.cwl default	Genome assembly for Exomiser
+exomiser_data_version	string	"2512"	main-vg.cwl default	Data version for Exomiser
+hpo_terms	string	""	Patient Metadata fallback	Fallback comma-separated HPO terms if metadata.yaml lacks URIs
+exomiser_top_genes	int	10	main-vg.cwl default	Number of top Exomiser genes to export
+vep_fasta_file	File (sec: .fai, .gzi)	(required)	vep102_indexed_fasta (00528ccfa8b07fd08907077b1f4fe3e9+927/fastafile)	Ensembl numeric GRCh38 FASTA with bgzip index for VEP
+metadata	File	(required)	Patient WGS Collection (metadata.yaml)	Genoor YAML containing patient sex and HPO phenotype URIs
+acmg_clinvar_vcf	File (sec: .tbi)	(required)	acmg-inputs-2026-11 (28a24f20fb9659e2ba4e4b9a17f7bec0+778/clinvar.vcf.gz)	ClinVar GRCh38 VCF + index (2026-11-01)
+acmg_gene_table	File	(required)	acmg-gene-table-strchive-2026-11 (95d0b6027bd22592ac4ebde6412c0d63+100/gene_table.tsv)	Precomputed 19,642-gene constraint and ClinVar table
+acmg_strchive_json	File?	null (optional)	acmg-gene-table-strchive-2026-11 (95d0b6027bd22592ac4ebde6412c0d63+100/STRchive-loci.json)	STRchive 82-locus repeat expansion thresholds JSON
+acmg_top_candidates	int	10	main-vg.cwl default	Number of candidate genes evaluated by the ACMG agent
+llm_backend	string	"openai"	Configuration ("openai" | "llama" | "off")	ACMG agent LLM backend selector
+llm_endpoint	string	"http://unimatrix01.kaust.edu.sa:8000/v1"	Configuration	OpenAI-compatible vLLM API endpoint URL
+llm_model	string	"qwen3.8-27b"	Configuration	Model identifier on the OpenAI-compatible endpoint
+llm_api_key	string	""	"FROM-ENV" in template JSONs	Bearer token for the LLM endpoint (passed via ACMG_LLM_API_KEY)
+llm_max_tokens	int	4096	main-vg.cwl default	Maximum completion tokens per turn for the LLM
