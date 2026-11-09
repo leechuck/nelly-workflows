@@ -94,14 +94,15 @@ inputs:
   exomiser_top_genes:
     type: int
     default: 10
-  # Pre-wired optional inputs for WP4 (acmg-agent + unimatrix LLM endpoint) so the same
-  # local/test-tail.{TS,HD}.json templates work before and after WP4 is merged:
-  acmg_clinvar_vcf:
+  # ACMG evaluation agent + unimatrix LLM endpoint:
+  reference_fai:
     type: File?
+  acmg_clinvar_vcf:
+    type: File
     secondaryFiles:
       - .tbi
   acmg_gene_table:
-    type: File?
+    type: File
   acmg_strchive_json:
     type: File?
   acmg_top_candidates:
@@ -119,6 +120,9 @@ inputs:
   llm_api_key:
     type: string
     default: ""
+  llm_max_tokens:
+    type: int
+    default: 4096
 
 outputs:
   output_filtered_vcf:
@@ -142,6 +146,15 @@ outputs:
   output_exomiser_html:
     type: File
     outputSource: exomiser/exomiser_html
+  output_candidates_vep:
+    type: File
+    outputSource: vep-candidates/vep_output
+  output_acmg_json:
+    type: File
+    outputSource: acmg-agent/acmg_json
+  output_acmg_report:
+    type: File
+    outputSource: acmg-agent/acmg_report
 
 steps:
   phenofrommetadata:
@@ -195,3 +208,54 @@ steps:
       sample_sex: phenofrommetadata/exomiser_sex
     out: [exomiser_genes_tsv, exomiser_variants_tsv, exomiser_json, exomiser_html]
     run: ../exomiser.cwl
+
+  acmg-extract-candidates:
+    in:
+      exomiser_genes_tsv: exomiser/exomiser_genes_tsv
+      exomiser_variants_tsv: exomiser/exomiser_variants_tsv
+      top_candidates: acmg_top_candidates
+      reference_fai: reference_fai
+    out: [candidates_vcf]
+    run: ../acmg-extract-candidates.cwl
+
+  vep-candidates:
+    in:
+      vep_input: acmg-extract-candidates/candidates_vcf
+      vep_assembly: vep_assembly
+      vep_output_file:
+        default: "candidates.vep.vcf.gz"
+      pavs_custom_file: pavs_custom_file
+      pavs_custom_args: pavs_custom_args
+      go_custom_file: go_custom_file
+      go_custom_args: go_custom_args
+      hpo_custom_file: hpo_custom_file
+      hpo_custom_args: hpo_custom_args
+      ppi_custom_file: ppi_custom_file
+      ppi_custom_args: ppi_custom_args
+      vep_dir: vep_dir
+      vep_fasta_file: vep_fasta_file
+    out: [vep_console_out, vep_output]
+    run: ../vep.cwl
+
+  acmg-agent:
+    in:
+      vep_vcf: vep-candidates/vep_output
+      clinvar_vcf: acmg_clinvar_vcf
+      gene_table: acmg_gene_table
+      strchive_json: acmg_strchive_json
+      exomiser_genes_tsv: exomiser/exomiser_genes_tsv
+      exomiser_variants_tsv: exomiser/exomiser_variants_tsv
+      eh_json: eh_json
+      slivar_vcf: slivar/slivar_output
+      sample_name: sample_name
+      hpo_terms: phenofrommetadata/hpo_terms
+      phenotype: phenofrommetadata/pheno_output
+      sample_sex: phenofrommetadata/exomiser_sex
+      top_candidates: acmg_top_candidates
+      llm_backend: llm_backend
+      llm_endpoint: llm_endpoint
+      llm_model: llm_model
+      llm_api_key: llm_api_key
+      llm_max_tokens: llm_max_tokens
+    out: [acmg_json, acmg_report]
+    run: ../acmg-agent.cwl

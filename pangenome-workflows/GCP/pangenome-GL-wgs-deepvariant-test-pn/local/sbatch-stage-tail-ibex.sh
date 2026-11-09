@@ -142,14 +142,14 @@ done
 SLIVAR_PDH="148bcb74e5d8268ac486d315e657f70b+3240"
 for f in \
   gnomad.hg38.genomes.v3.fix.zip \
-  Homo_sapiens_assembly38.known_indels.vcf.gz \
-  Homo_sapiens_assembly38.known_indels.vcf.gz.tbi \
-  Mills_and_1000G_gold_standard.indels.hg38.vcf.gz \
-  Mills_and_1000G_gold_standard.indels.hg38.vcf.gz.tbi \
-  KSA_OMIM_20220407_VEP.at_least_one_homo.sorted.bed.gz \
-  KSA_OMIM_20220407_VEP.at_least_one_homo.sorted.bed.gz.tbi \
-  cohort_biallelic.af.vcf.gz \
-  cohort_biallelic.af.vcf.gz.tbi; do
+  sorted.pavs.plugin.38.vcf.gz \
+  sorted.pavs.plugin.38.vcf.gz.tbi \
+  sorted.plugin.go.bed.gz \
+  sorted.plugin.go.bed.gz.tbi \
+  sorted.plugin.pheno.bed.gz \
+  sorted.plugin.pheno.bed.gz.tbi \
+  sorted.plugin.ppi.bed.gz \
+  sorted.plugin.ppi.bed.gz.tbi; do
   stage_keep_file "$SLIVAR_PDH/$f" "$INPUTS/slivar_vep_custom/$f"
 done
 

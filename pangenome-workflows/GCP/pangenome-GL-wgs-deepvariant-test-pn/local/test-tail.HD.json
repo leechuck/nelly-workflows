@@ -104,6 +104,10 @@
   "exomiser_assembly": "hg38",
   "exomiser_data_version": "2512",
   "exomiser_top_genes": 10,
+  "reference_fai": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/graph/hg38.fa.fai"
+  },
   "acmg_clinvar_vcf": {
     "class": "File",
     "path": "/data/nelly-local/inputs/acmg/clinvar.vcf.gz",
