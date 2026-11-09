@@ -1,4 +1,4 @@
-cwlVersion: v1.1
+cwlVersion: v1.2
 class: CommandLineTool
 # Drop every VCF record that falls inside an ExpansionHunter ReferenceRegion before
 # phenotype prioritisation. DeepVariant systematically MIS-calls these short-tandem-
@@ -17,7 +17,7 @@ requirements:
   InlineJavascriptRequirement: {}
   ShellCommandRequirement: {}
   DockerRequirement:
-    dockerPull: "staphb/bcftools:1.19"
+    dockerPull: "staphb/bcftools:1.22"
   ResourceRequirement:
     coresMin: 2
     ramMin: $(4 * 1024)

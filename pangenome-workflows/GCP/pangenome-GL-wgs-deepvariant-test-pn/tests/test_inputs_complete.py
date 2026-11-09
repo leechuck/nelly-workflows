@@ -46,12 +46,22 @@ def required_inputs(cwl_path):
 
 
 REQUIRED = required_inputs(CWL)
+ALIGN_CALL = os.path.join(WF_DIR, "align-and-call.cwl")
+REQUIRED_AC = required_inputs(ALIGN_CALL)
 
 
 def test_workflow_has_required_inputs():
     # Sanity: the parser found the inputs we know are required (no defaults).
-    for name in ("graph", "ref", "reads1", "reads2", "exomiser_data", "slivar_gnomad"):
+    for name in ("graph", "hapl", "ref", "reads1", "reads2", "exomiser_data", "slivar_gnomad"):
         assert name in REQUIRED, f"{name} should be a required workflow input"
+
+
+def test_align_and_call_inputs_wired_from_main():
+    with open(CWL) as fh:
+        main = yaml.safe_load(fh)
+    step_in = set((main["steps"]["align-and-call"].get("in") or {}).keys())
+    missing = sorted(REQUIRED_AC - step_in)
+    assert not missing, f"main-vg.cwl does not wire required align-and-call inputs: {missing}"
 
 
 def test_input_jsons_exist():

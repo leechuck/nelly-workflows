@@ -1,0 +1,83 @@
+{
+    "_comment_run": "End-to-end TS (Tay-Sachs disease) run on synthetic sample (HG002 background + hom-alt HEXA c.1274_1277dupTATC frameshift at chr15:72346580 + 11 het noise SNPs). Paired reads ~65 GB each (~30x GRCh38). Validated on the post-norm VCF in test-exomiser-gl: Exomiser ranks HEXA #1 of 458 genes (combinedScore 0.996, AR) and the local Qwen2.5-3B LLM names HEXA as primary candidate.",
+    "ref_prefix": "GRCh38",
+    "sample_name": "sample",
+    "graph": {
+        "class": "File",
+        "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/ksa_hg38.gbz"
+    },
+    "ref": {
+        "class": "File",
+        "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/hg38.fa",
+        "secondaryFiles": [
+            {"class": "File", "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/hg38.fa.fai"}
+        ]
+    },
+    "reads1": {
+        "class": "File",
+        "location": "keep:3d217f83e3fc2fcbe64b13c600b01014+93424/TS_R1.fq.gz"
+    },
+    "reads2": {
+        "class": "File",
+        "location": "keep:3d217f83e3fc2fcbe64b13c600b01014+93424/TS_R2.fq.gz"
+    },
+    "hapl": {
+        "class": "File",
+        "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/ksa_hg38.hapl"
+    },
+    "dv_mode": "standard",
+    "aligned_bam_output": "aligned.bam",
+    "dv_model_type": "WGS",
+    "dv_output_vcf": "variants.dv.vcf.gz",
+    "dv_output_gvcf": "variants.dv.gvcf.gz",
+    "eh_output_prefix": "eh_repeats",
+    "combined_vcf_name": "combined.vcf.gz",
+    "normalized_vcf_name": "normalized.vcf.gz",
+    "metadata": {
+        "class": "File",
+        "location": "keep:3d217f83e3fc2fcbe64b13c600b01014+93424/TS.clinical.yaml"
+    },
+    "slivar_gnomad": {
+        "class": "File",
+        "location": "keep:148bcb74e5d8268ac486d315e657f70b+3240/gnomad.hg38.genomes.v3.fix.zip"
+    },
+    "vep_assembly": "GRCh38",
+    "vep_output_file": "vep-output.vcf.gz",
+    "pavs_custom_file": {
+        "class": "File",
+        "path": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.pavs.plugin.38.vcf.gz"
+    },
+    "pavs_custom_args": "PAVS,vcf,exact",
+    "go_custom_file": {
+        "class": "File",
+        "path": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.go.bed.gz"
+    },
+    "go_custom_args": "GO_CLASSES,bed,overlap",
+    "hpo_custom_file": {
+        "class": "File",
+        "path": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.pheno.bed.gz"
+    },
+    "hpo_custom_args": "PHENOTYPE,bed,overlap",
+    "ppi_custom_file": {
+        "class": "File",
+        "path": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.ppi.bed.gz"
+    },
+    "ppi_custom_args": "PPI,bed,overlap",
+    "vep_dir": {
+        "class": "Directory",
+        "path": "keep:ed620a5a2bdf6cb09b171c3219699562+542550"
+    },
+    "vep_fasta_file": {
+        "class": "File",
+        "path": "keep:00528ccfa8b07fd08907077b1f4fe3e9+927/fastafile"
+    },
+    "exomiser_data": {
+        "class": "Directory",
+        "location": "keep:00cbcbd45419c2f051889639deff3431+39145"
+    },
+    "exomiser_assembly": "hg38",
+    "exomiser_data_version": "2512",
+    "hpo_terms": "HP:0002376,HP:0001252,HP:0002267,HP:0010729,HP:0001250",
+    "exomiser_top_genes": 10,
+    "genomelinter_output_name": "genomelinter-output.txt"
+}

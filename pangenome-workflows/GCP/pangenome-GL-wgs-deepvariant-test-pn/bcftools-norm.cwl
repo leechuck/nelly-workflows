@@ -1,10 +1,10 @@
-cwlVersion: v1.1
+cwlVersion: v1.2
 class: CommandLineTool
 requirements:
   InlineJavascriptRequirement: {}
   ShellCommandRequirement: {}
   DockerRequirement:
-    dockerPull: "staphb/bcftools:1.19"
+    dockerPull: "staphb/bcftools:1.22"
   ResourceRequirement:
     coresMin: 4
     ramMin: $(8 * 1024)
