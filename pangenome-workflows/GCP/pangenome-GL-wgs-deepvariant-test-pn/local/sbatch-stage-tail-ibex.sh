@@ -68,7 +68,9 @@ stage_sif_from_keep_tar() {
   local lock="$SIF_CACHE/.lock-${sif_name}"
   if [ -s "$dst" ]; then return 0; fi
   if mkdir "$lock" 2>/dev/null; then
-    local tar_path="$IMAGES/${sif_name%.sif}.tar"
+    local safe_base
+    safe_base="$(echo "${sif_name%.sif}" | tr ':' '-')"
+    local tar_path="$IMAGES/${safe_base}.tar"
     if [ ! -s "$tar_path" ]; then
       echo "[$(date -Is)] Downloading Docker tar $keep_tar_uri -> $tar_path"
       "$ARV_GET" -f --threads 16 "$keep_tar_uri" "$tar_path.partial.$$"
