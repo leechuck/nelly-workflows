@@ -38,12 +38,12 @@ fetch_keep_file() {
 # - Legacy vg 1.54 .min:              56e94ed8e0d67d0c8e2616959d23ef2e+23423
 # - Tay-Sachs tail (post-norm + EH):  b2c8c2b940de5bf4d7881b652e12c24f+18026
 # - Huntington tail (post-norm + EH): 6d04e84a0ab500c5036ec6713756783b+17943
-# - Tay-Sachs WGS reads + metadata:   5c88241c12f7dc7553ffb3f2ac1ba54b+39418 (148_ID1_148; reads identical to 9bb0914061258315847c397cd2eda556+36864)
+# - Tay-Sachs WGS reads + metadata:   5c88241c12f7dc7553ffb3f2ac1ba54b+39418 (148_ID1_148; coded HPO)
 # - Tay-Sachs legacy id141 metadata:  4e618275df873b268594912ab6104f89+39753
-# - Huntington WGS reads + metadata:  fa1d814cea61d867026682776bb0eb7a+36923 (hd-id201-htt-expansion-reads)
-# - Huntington coded HPO metadata:    d03401bdd2443e6340903acb552fd0c3+39418 (149_ID2_149)
+# - Huntington WGS reads + metadata:  d03401bdd2443e6340903acb552fd0c3+39418 (149_ID2_149; coded HPO; reads identical to fa1d814cea61d867026682776bb0eb7a+36923)
 # - slivar gnomAD + VEP custom files: 148bcb74e5d8268ac486d315e657f70b+3240
 # - VEP Ensembl-numeric fastafile:    00528ccfa8b07fd08907077b1f4fe3e9+927
+# - VEP 116 GRCh38 cache:             8afec8cdb796367144fa2bcec3a3dc59+624229 (root contains homo_sapiens/116_GRCh38/)
 # - Exomiser 2512 data bundle:        00cbcbd45419c2f051889639deff3431+39145
 # - ACMG inputs (ClinVar/gnomAD):     28a24f20fb9659e2ba4e4b9a17f7bec0+778
 # - GIAB benchmark inputs + HG002:    0c559a512e87c566c3a3de02d056b4a5+33970
@@ -58,8 +58,8 @@ if [ "$MODE" != "--verify-only" ]; then
 
   fetch_keep_file "5c88241c12f7dc7553ffb3f2ac1ba54b+39418" "metadata.yaml" "$ROOT/patients/ts/metadata.yaml"
   fetch_keep_file "4e618275df873b268594912ab6104f89+39753" "metadata.yaml" "$ROOT/patients/ts/metadata.id141.yaml"
-  fetch_keep_file "fa1d814cea61d867026682776bb0eb7a+36923" "metadata.yaml" "$ROOT/patients/hd/metadata.yaml"
-  fetch_keep_file "d03401bdd2443e6340903acb552fd0c3+39418" "metadata.yaml" "$ROOT/patients/hd/metadata.id149.yaml"
+  fetch_keep_file "d03401bdd2443e6340903acb552fd0c3+39418" "metadata.yaml" "$ROOT/patients/hd/metadata.yaml"
+  fetch_keep_file "fa1d814cea61d867026682776bb0eb7a+36923" "metadata.yaml" "$ROOT/patients/hd/metadata.id201.yaml"
 
   for f in \
     gnomad.hg38.genomes.v3.fix.zip \
@@ -94,10 +94,8 @@ if [ "$MODE" != "--verify-only" ]; then
       echo "[$(date -Is)] Unpacking VEP 116 cache tarball..."
       (cd "$ROOT/vep_cache" && tar -xzf homo_sapiens_vep_116_GRCh38.tar.gz)
     else
-      echo "[$(date -Is)] Downloading VEP 116 GRCh38 cache from Ensembl..."
-      curl -fsSL -o "$ROOT/vep_cache/homo_sapiens_vep_116_GRCh38.tar.gz" \
-        https://ftp.ensembl.org/pub/release-116/variation/indexed_vep_cache/homo_sapiens_vep_116_GRCh38.tar.gz
-      (cd "$ROOT/vep_cache" && tar -xzf homo_sapiens_vep_116_GRCh38.tar.gz)
+      echo "[$(date -Is)] Staging VEP 116 GRCh38 cache from Keep (8afec8cdb796367144fa2bcec3a3dc59+624229)..."
+      "$ARV_GET" -r --skip-existing "8afec8cdb796367144fa2bcec3a3dc59+624229/homo_sapiens" "$ROOT/vep_cache/"
     fi
   fi
 
@@ -114,8 +112,8 @@ if [ "$MODE" != "--verify-only" ]; then
 
     fetch_keep_file "5c88241c12f7dc7553ffb3f2ac1ba54b+39418" "reads1.fastq.gz" "$ROOT/patients/ts/reads1.fastq.gz"
     fetch_keep_file "5c88241c12f7dc7553ffb3f2ac1ba54b+39418" "reads2.fastq.gz" "$ROOT/patients/ts/reads2.fastq.gz"
-    fetch_keep_file "fa1d814cea61d867026682776bb0eb7a+36923" "reads1.fastq.gz" "$ROOT/patients/hd/reads1.fastq.gz"
-    fetch_keep_file "fa1d814cea61d867026682776bb0eb7a+36923" "reads2.fastq.gz" "$ROOT/patients/hd/reads2.fastq.gz"
+    fetch_keep_file "d03401bdd2443e6340903acb552fd0c3+39418" "reads1.fastq.gz" "$ROOT/patients/hd/reads1.fastq.gz"
+    fetch_keep_file "d03401bdd2443e6340903acb552fd0c3+39418" "reads2.fastq.gz" "$ROOT/patients/hd/reads2.fastq.gz"
 
     for f in \
       GRCh38_alldifficultregions.bed.gz \

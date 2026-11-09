@@ -59,13 +59,13 @@ setsid nohup bash local/stage-inputs.sh --all > /data/nelly-local/logs/stage-inp
 | Legacy vg 1.54 `.min` | `56e94ed8e0d67d0c8e2616959d23ef2e+23423` | `ksa_hg38.min` | `inputs/graph/ksa_hg38.v154.min` |
 | slivar gnomAD + VEP custom | `148bcb74e5d8268ac486d315e657f70b+3240` | `gnomad.hg38.genomes.v3.fix.zip`, 4 custom VCF/BED + `.tbi` | `inputs/slivar_vep_custom/` |
 | VEP Ensembl-numeric FASTA | `00528ccfa8b07fd08907077b1f4fe3e9+927` | `fastafile`, `fastafile.fai`, `fastafile.gzi` | `inputs/vep_fasta/` |
-| VEP 116 GRCh38 cache | `vep-116-GRCh38-cache` (Ensembl 116) | `homo_sapiens/116_GRCh38/` | `inputs/vep_cache/` |
+| VEP 116 GRCh38 cache | `8afec8cdb796367144fa2bcec3a3dc59+624229` | `homo_sapiens/116_GRCh38/` | `inputs/vep_cache/` |
 | Exomiser 2512 bundle | `00cbcbd45419c2f051889639deff3431+39145` | `data/2512_hg38/`, `data/2512_phenotype/` | `inputs/exomiser/` |
 | ACMG databases | `28a24f20fb9659e2ba4e4b9a17f7bec0+778` | `clinvar.vcf.gz`(+.tbi), `gnomad.v4.1.constraint_metrics.tsv`, `variant_summary.txt.gz` | `inputs/acmg/` |
 | Tay-Sachs tail inputs | `b2c8c2b940de5bf4d7881b652e12c24f+18026` | `normalized.vcf.gz`(+.tbi), `eh_repeats.vcf.gz`(+.tbi), `eh_repeats.json` | `inputs/tail/ts/` |
 | Huntington tail inputs | `6d04e84a0ab500c5036ec6713756783b+17943` | `normalized.vcf.gz`(+.tbi), `eh_repeats.vcf.gz`(+.tbi), `eh_repeats.json` | `inputs/tail/hd/` |
-| Tay-Sachs WGS reads + metadata | `5c88241c12f7dc7553ffb3f2ac1ba54b+39418` (`9bb0914061258315847c397cd2eda556+36864`) | `reads1.fastq.gz`, `reads2.fastq.gz`, `metadata.yaml` | `inputs/patients/ts/` |
-| Huntington WGS reads + metadata | `fa1d814cea61d867026682776bb0eb7a+36923` (`d03401bdd2443e6340903acb552fd0c3+39418`) | `reads1.fastq.gz`, `reads2.fastq.gz`, `metadata.yaml` | `inputs/patients/hd/` |
+| Tay-Sachs WGS reads + metadata | `5c88241c12f7dc7553ffb3f2ac1ba54b+39418` (`9bb0914061258315847c397cd2eda556+36864`) | `reads1.fastq.gz`, `reads2.fastq.gz`, `metadata.yaml` (coded HPO) | `inputs/patients/ts/` |
+| Huntington WGS reads + metadata | `d03401bdd2443e6340903acb552fd0c3+39418` (`fa1d814cea61d867026682776bb0eb7a+36923`) | `reads1.fastq.gz`, `reads2.fastq.gz`, `metadata.yaml` (coded HPO) | `inputs/patients/hd/` |
 | GIAB truth + HG002 reads | `0c559a512e87c566c3a3de02d056b4a5+33970` | `HG002.novaseq.pcr-free.30x.R{1,2}.fastq.gz`, v4.2.1 & v5.0q truths, stratifications | `inputs/giab/` |
 | GIAB HG003 reads | `4bc83e4703035a3eeb142eb17fcc1ce2+44786` | `HG003_R1.fastq.gz`, `HG003_R2.fastq.gz` | `inputs/giab/` |
 
