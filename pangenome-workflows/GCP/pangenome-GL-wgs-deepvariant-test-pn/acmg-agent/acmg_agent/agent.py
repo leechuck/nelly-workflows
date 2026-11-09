@@ -172,8 +172,8 @@ def validate_submission(
     if not isinstance(submitted, dict):
         return (False, "submission must be an object")
     criteria = submitted.get("criteria")
-    if not isinstance(criteria, list) or not criteria:
-        return (False, "criteria must be a non-empty list (use submit with rationales for any change)")
+    if not isinstance(criteria, list):
+        return (False, "criteria must be a list (an empty list confirms the deterministic result)")
     rationale = submitted.get("rationale")
     if not isinstance(rationale, str) or not rationale.strip():
         return (False, "rationale must be a non-empty string")
