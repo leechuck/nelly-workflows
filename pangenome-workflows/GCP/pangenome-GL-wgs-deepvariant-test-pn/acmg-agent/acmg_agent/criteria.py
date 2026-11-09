@@ -149,13 +149,22 @@ def eval_pm1(ev: Evidence) -> Criterion:
     return Criterion("PM1", "not_met", None, "variant outside curated hotspot regions")
 
 
+def _founder_af_context(ev: Evidence) -> str:
+    if ev.max_af_any_pop is not None and (ev.max_af is None or ev.max_af_any_pop > ev.max_af):
+        pop = ev.max_af_any_pop_pop or ev.max_af_any_pop_source or "founder"
+        return f"; founder-population AF {ev.max_af_any_pop:.4f} ({pop})"
+    return ""
+
+
 def eval_pm2(ev: Evidence) -> Criterion:
     thr = PM2_MAX_AF.get(ev.moi, 1e-4)
+    src = f" ({ev.max_af_source})" if ev.max_af_source else ""
+    f_ctx = _founder_af_context(ev)
     if ev.max_af is None or ev.max_af == 0.0:
-        return Criterion("PM2", "met", "supporting", f"absent from gnomAD (< {thr:.0e} for {ev.moi}; PM2_Supporting per ClinGen SVI)")
+        return Criterion("PM2", "met", "supporting", f"absent from gnomAD (< {thr:.0e} for {ev.moi}; PM2_Supporting per ClinGen SVI{f_ctx})")
     if ev.max_af < thr:
-        return Criterion("PM2", "met", "supporting", f"max AF {ev.max_af:.2e} < {thr:.0e} for {ev.moi} (PM2_Supporting per ClinGen SVI)")
-    return Criterion("PM2", "not_met", None, f"max AF {ev.max_af:.2e} >= {thr:.0e} for {ev.moi}")
+        return Criterion("PM2", "met", "supporting", f"max AF {ev.max_af:.2e}{src} < {thr:.0e} for {ev.moi} (PM2_Supporting per ClinGen SVI{f_ctx})")
+    return Criterion("PM2", "not_met", None, f"max AF {ev.max_af:.2e}{src} >= {thr:.0e} for {ev.moi}{f_ctx}")
 
 
 def _pm3_strength_from_points(pts: float) -> str | None:

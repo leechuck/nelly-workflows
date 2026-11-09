@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import csv
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import pysam
 
@@ -15,6 +15,49 @@ LOF_CONSEQUENCES = frozenset({
     "stop_gained",
     "frameshift_variant",
 })
+
+# ClinGen SVI PM2/BS1/BA1 calibration: use non-bottlenecked reference populations
+# (exclude ASJ, FIN, AMI, MID, and REMAINING/OTH).
+NON_BOTTLENECKED_AF_FIELDS: tuple[str, ...] = (
+    "gnomADe_AFR_AF",
+    "gnomADe_AMR_AF",
+    "gnomADe_EAS_AF",
+    "gnomADe_NFE_AF",
+    "gnomADe_SAS_AF",
+    "gnomADg_AFR_AF",
+    "gnomADg_AMR_AF",
+    "gnomADg_EAS_AF",
+    "gnomADg_NFE_AF",
+    "gnomADg_SAS_AF",
+)
+
+BOTTLENECKED_AF_FIELDS: tuple[str, ...] = (
+    "gnomADe_ASJ_AF",
+    "gnomADe_FIN_AF",
+    "gnomADe_AMI_AF",
+    "gnomADe_MID_AF",
+    "gnomADe_REMAINING_AF",
+    "gnomADe_OTH_AF",
+    "gnomADg_ASJ_AF",
+    "gnomADg_FIN_AF",
+    "gnomADg_AMI_AF",
+    "gnomADg_MID_AF",
+    "gnomADg_REMAINING_AF",
+    "gnomADg_OTH_AF",
+)
+
+ALL_POP_AF_FIELDS: tuple[str, ...] = NON_BOTTLENECKED_AF_FIELDS + BOTTLENECKED_AF_FIELDS
+
+
+def extract_pop_code(field_or_pop: str | None) -> str | None:
+    """Extract short population code (e.g. 'ASJ', 'NFE') from a VEP field or MAX_AF_POPS string."""
+    if not field_or_pop:
+        return None
+    token = field_or_pop.strip().split(",")[0].split("&")[0].strip()
+    parts = token.split("_")
+    if len(parts) >= 2 and parts[0].startswith("gnomAD"):
+        return parts[1].upper()
+    return token.upper() or None
 
 _CODON_RE = re.compile(r"p\.([A-Za-z]{1,3})(\d+)([A-Za-z=*?]{1,3})")
 
@@ -93,6 +136,8 @@ class VepAnnotation:
     gt: str | None = None
     alphamissense: float | None = None
     protein_length: int | None = None
+    pop_afs: dict[str, float] = field(default_factory=dict)
+    max_af_pops: str | None = None
 
 
 def _select_consequence(raw_csq: str) -> str:
@@ -177,6 +222,12 @@ class VepIndex:
                     raw_prot = (entry.get("Protein_position") or "").strip()
                     prot_len = parse_int(raw_prot.split("/", 1)[1]) if "/" in raw_prot else None
                     am_score = parse_float(entry.get("am_pathogenicity") or entry.get("AlphaMissense"))
+                    pop_afs: dict[str, float] = {}
+                    for k in ALL_POP_AF_FIELDS:
+                        if k in entry and entry[k]:
+                            val = parse_float(entry[k])
+                            if val is not None:
+                                pop_afs[k] = val
                     annot = VepAnnotation(
                         gene=entry.get("SYMBOL", "").strip(),
                         transcript=entry.get("Feature", "").strip() or None,
@@ -199,6 +250,8 @@ class VepIndex:
                         gt=gt_str,
                         alphamissense=am_score,
                         protein_length=prot_len,
+                        pop_afs=pop_afs,
+                        max_af_pops=entry.get("MAX_AF_POPS", "").strip() or None,
                     )
                     parsed_annots.append(annot)
 

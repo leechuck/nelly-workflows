@@ -42,10 +42,14 @@ def serialize_candidate_assessment(
         for c in criteria
         if c.status == "met"
     ]
+    founder_note = ""
+    if ev.max_af_any_pop is not None and (ev.max_af is None or ev.max_af_any_pop > ev.max_af):
+        pop = ev.max_af_any_pop_pop or ev.max_af_any_pop_source or "founder"
+        founder_note = f" (founder-population AF {ev.max_af_any_pop:.4f} ({pop}))"
     default_rationale = (
         f"{ev.gene} ({ev.moi}) {_format_variant_str(ev.chrom, ev.pos, ev.ref, ev.alt)} "
         f"({ev.zygosity}) classified as {clf.class_} ({clf.points} pts; rule-based: {clf.rule_based_class}). "
-        f"Met criteria: {', '.join(met_codes) if met_codes else 'none'}."
+        f"Met criteria: {', '.join(met_codes) if met_codes else 'none'}{founder_note}."
     )
     return {
         "kind": "snv",
@@ -66,6 +70,10 @@ def serialize_candidate_assessment(
             "mane_select": ev.mane_select,
             "lof_mechanism": ev.lof_mechanism,
             "max_af": ev.max_af,
+            "max_af_source": ev.max_af_source,
+            "max_af_any_pop": ev.max_af_any_pop,
+            "max_af_any_pop_source": ev.max_af_any_pop_source,
+            "max_af_any_pop_pop": ev.max_af_any_pop_pop,
             "popmax_af": ev.popmax_af,
             "nhomalt": ev.nhomalt,
             "revel": ev.revel,

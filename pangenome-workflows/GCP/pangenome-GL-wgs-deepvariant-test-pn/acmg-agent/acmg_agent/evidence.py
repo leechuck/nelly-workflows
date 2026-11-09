@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 from acmg_agent.inputs import (
+    ALL_POP_AF_FIELDS,
     ClinvarIndex,
+    NON_BOTTLENECKED_AF_FIELDS,
+    VepAnnotation,
     VepIndex,
+    extract_pop_code,
     norm_chrom,
     parse_exomiser_freq,
     parse_float,
@@ -11,6 +15,77 @@ from acmg_agent.inputs import (
     _normalize_clnsig,
 )
 from acmg_agent.model import Evidence
+
+
+def _resolve_population_frequencies(
+    vep_hit: VepAnnotation | None,
+    slivar_popmax: float | None,
+    exomiser_af: float | None,
+) -> tuple[float | None, str | None, float | None, str | None, str | None]:
+    """Return (max_af, max_af_source, max_af_any_pop, max_af_any_pop_source, max_af_any_pop_pop).
+
+    ClinGen SVI PM2/BS1/BA1 calibration uses the maximum AF across non-bottlenecked reference
+    populations (AFR, AMR, EAS, NFE, SAS across gnomADe_* and gnomADg_*), excluding bottlenecked
+    or founder populations (ASJ, FIN, AMI, MID) and REMAINING/OTH buckets.
+    """
+    max_af: float | None = None
+    max_af_source: str | None = None
+
+    if vep_hit is not None:
+        non_bottle = [
+            (k, vep_hit.pop_afs[k])
+            for k in NON_BOTTLENECKED_AF_FIELDS
+            if k in vep_hit.pop_afs and vep_hit.pop_afs[k] is not None
+        ]
+        if non_bottle:
+            max_af_source, max_af = max(non_bottle, key=lambda item: item[1])
+        else:
+            overall = [
+                (k, v)
+                for k, v in (("gnomADe_AF", vep_hit.gnomade_af), ("gnomADg_AF", vep_hit.gnomadg_af))
+                if v is not None
+            ]
+            if overall:
+                max_af_source, max_af = max(overall, key=lambda item: item[1])
+
+    if max_af is None and slivar_popmax is not None:
+        max_af = slivar_popmax
+        max_af_source = "gnomad_popmax_af"
+
+    if max_af is None and vep_hit is not None and vep_hit.max_af is not None:
+        max_af = vep_hit.max_af
+        max_af_source = "MAX_AF"
+
+    if max_af is None and exomiser_af is not None:
+        max_af = exomiser_af
+        max_af_source = "MAX_FREQ"
+
+    # Founder / all-population maximum for clinical context
+    any_af: float | None = None
+    any_src: str | None = None
+    any_pop: str | None = None
+    if vep_hit is not None:
+        all_pops = [
+            (k, vep_hit.pop_afs[k])
+            for k in ALL_POP_AF_FIELDS
+            if k in vep_hit.pop_afs and vep_hit.pop_afs[k] is not None
+        ]
+        if all_pops:
+            any_src, any_af = max(all_pops, key=lambda item: item[1])
+            any_pop = extract_pop_code(any_src)
+        if vep_hit.max_af is not None and (any_af is None or vep_hit.max_af > any_af):
+            any_af = vep_hit.max_af
+            any_src = vep_hit.max_af_pops or "MAX_AF"
+            if vep_hit.max_af_pops:
+                any_pop = extract_pop_code(vep_hit.max_af_pops)
+
+    if any_af is None:
+        any_af = max_af
+        any_src = max_af_source
+        if max_af_source in ALL_POP_AF_FIELDS:
+            any_pop = extract_pop_code(max_af_source)
+
+    return (max_af, max_af_source, any_af, any_src, any_pop)
 
 
 def _infer_zygosity(gt: str, chrom: str, moi: str) -> str:
@@ -167,16 +242,13 @@ def build_evidence(
     slivar_popmax = slivar_rec.get("popmax_af") if slivar_rec else None
     nhomalt = slivar_rec.get("nhomalt") if slivar_rec else None
 
-    vep_afs = [
-        x for x in (
-            (vep_hit.max_af if vep_hit else None),
-            (vep_hit.gnomade_af if vep_hit else None),
-            (vep_hit.gnomadg_af if vep_hit else None),
-        )
-        if x is not None
-    ]
-    all_afs = [x for x in (*vep_afs, slivar_popmax, exomiser_af) if x is not None]
-    max_af = max(all_afs) if all_afs else None
+    (
+        max_af,
+        max_af_source,
+        max_af_any_pop,
+        max_af_any_pop_source,
+        max_af_any_pop_pop,
+    ) = _resolve_population_frequencies(vep_hit, slivar_popmax, exomiser_af)
     popmax_af = slivar_popmax if slivar_popmax is not None else (vep_hit.max_af if vep_hit else None)
 
     # ClinVar
@@ -258,4 +330,8 @@ def build_evidence(
         clinvar_lof_plp=clinvar_lof_plp,
         alphamissense=alphamissense,
         protein_length=protein_length,
+        max_af_source=max_af_source,
+        max_af_any_pop=max_af_any_pop,
+        max_af_any_pop_source=max_af_any_pop_source,
+        max_af_any_pop_pop=max_af_any_pop_pop,
     )
