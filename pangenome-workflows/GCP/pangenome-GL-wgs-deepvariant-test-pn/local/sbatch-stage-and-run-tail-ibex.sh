@@ -159,7 +159,6 @@ if [ -d "$EXISTING_EXOMISER/2512_hg38" ] && [ ! -d "$INPUTS/exomiser/data/2512_h
 fi
 
 if [ ! -f "$INPUTS/vep_cache/homo_sapiens/116_GRCh38/.staged_complete" ]; then
-  rmdir "$INPUTS/vep_cache/.lock-vep" 2>/dev/null || true
   if mkdir "$INPUTS/vep_cache/.lock-vep" 2>/dev/null; then
     echo "[$(date -Is)] Downloading VEP 116 cache from Keep (8afec8cdb796367144fa2bcec3a3dc59+624229) by unique Keep block (16 workers) -> $INPUTS/vep_cache/"
     "$PYTHON" - "$INPUTS/vep_cache" <<'PY'
