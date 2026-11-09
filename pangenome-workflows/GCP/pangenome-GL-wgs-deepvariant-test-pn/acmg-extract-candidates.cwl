@@ -1,4 +1,4 @@
-cwlVersion: v1.1
+cwlVersion: v1.2
 class: CommandLineTool
 # Extract the ACMG candidate set from Exomiser's ranked output into a tiny VCF
 # (the contributing variants of the top-N re-ranked genes) so a second, cheap
