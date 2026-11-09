@@ -1,83 +1,138 @@
 {
-    "_comment_run": "End-to-end HD (Huntington disease) run on synthetic sample (HG002 background + 200x CAG HTT expansion on chr4:3074876-3074933 + 11 het noise SNPs). Paired reads ~65 GB each (~30x GRCh38). Clinical metadata supplies 5 HPO terms (Chorea, Dementia, Depression, Gait disturbance, Dysarthria); Exomiser ranks coding candidates while ExpansionHunter genotypes the HTT repeat (40x CAG -> 40/40 pathogenic; Exomiser cannot score symbolic <STR40> alleles so genome-linter surfaces the repeat expansion alongside Exomiser's gene table).",
-    "ref_prefix": "GRCh38",
-    "sample_name": "sample",
-    "graph": {
+  "aligned_bam_output": "aligned.bam",
+  "combined_vcf_name": "combined.vcf.gz",
+  "dv_model_type": "WGS",
+  "dv_output_gvcf": "variants.dv.gvcf.gz",
+  "dv_output_vcf": "variants.dv.vcf.gz",
+  "eh_output_prefix": "eh_repeats",
+  "genomelinter_output_name": "genomelinter-output.txt",
+  "go_custom_args": "GO_CLASSES,bed,overlap",
+  "go_custom_file": {
+    "basename": "sorted.plugin.go.bed.gz",
+    "class": "File",
+    "location": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.go.bed.gz",
+    "secondaryFiles": [
+      {
+        "basename": "sorted.plugin.go.bed.gz.tbi",
         "class": "File",
-        "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/ksa_hg38.gbz"
-    },
-    "ref": {
+        "location": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.go.bed.gz.tbi",
+        "size": 398406
+      }
+    ],
+    "size": 1478249
+  },
+  "graph": {
+    "basename": "ksa_hg38.gbz",
+    "class": "File",
+    "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/ksa_hg38.gbz",
+    "size": 2109057240
+  },
+  "hpo_custom_args": "PHENOTYPE,bed,overlap",
+  "hpo_custom_file": {
+    "basename": "sorted.plugin.pheno.bed.gz",
+    "class": "File",
+    "location": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.pheno.bed.gz",
+    "secondaryFiles": [
+      {
+        "basename": "sorted.plugin.pheno.bed.gz.tbi",
         "class": "File",
-        "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/hg38.fa",
-        "secondaryFiles": [
-            {"class": "File", "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/hg38.fa.fai"}
-        ]
-    },
-    "reads1": {
+        "location": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.pheno.bed.gz.tbi",
+        "size": 50267
+      }
+    ],
+    "size": 529936
+  },
+  "metadata": {
+    "class": "File",
+    "basename": "metadata.yaml",
+    "location": "keep:d03401bdd2443e6340903acb552fd0c3+39418/metadata.yaml"
+  },
+  "normalized_vcf_name": "normalized.vcf.gz",
+  "pavs_custom_args": "PAVS,vcf,exact",
+  "pavs_custom_file": {
+    "basename": "sorted.pavs.plugin.38.vcf.gz",
+    "class": "File",
+    "location": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.pavs.plugin.38.vcf.gz",
+    "secondaryFiles": [
+      {
+        "basename": "sorted.pavs.plugin.38.vcf.gz.tbi",
         "class": "File",
-        "location": "keep:fc3aa7c59283c637f92b07311446b9aa+93424/HD_R1.fq.gz"
-    },
-    "reads2": {
+        "location": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.pavs.plugin.38.vcf.gz.tbi",
+        "size": 14838
+      }
+    ],
+    "size": 47045
+  },
+  "ppi_custom_args": "PPI,bed,overlap",
+  "ppi_custom_file": {
+    "basename": "sorted.plugin.ppi.bed.gz",
+    "class": "File",
+    "location": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.ppi.bed.gz",
+    "secondaryFiles": [
+      {
+        "basename": "sorted.plugin.ppi.bed.gz.tbi",
         "class": "File",
-        "location": "keep:fc3aa7c59283c637f92b07311446b9aa+93424/HD_R2.fq.gz"
-    },
-    "hapl": {
+        "location": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.ppi.bed.gz.tbi",
+        "size": 142615
+      }
+    ],
+    "size": 4377088
+  },
+  "reads1": {
+    "class": "File",
+    "basename": "reads1.fastq.gz",
+    "location": "keep:d03401bdd2443e6340903acb552fd0c3+39418/reads1.fastq.gz"
+  },
+  "reads2": {
+    "class": "File",
+    "basename": "reads2.fastq.gz",
+    "location": "keep:d03401bdd2443e6340903acb552fd0c3+39418/reads2.fastq.gz"
+  },
+  "ref_prefix": "GRCh38",
+  "sample_name": "sample",
+  "slivar_gnomad": {
+    "basename": "gnomad.hg38.genomes.v3.fix.zip",
+    "class": "File",
+    "location": "keep:148bcb74e5d8268ac486d315e657f70b+3240/gnomad.hg38.genomes.v3.fix.zip",
+    "size": 4082519926
+  },
+  "vep_assembly": "GRCh38",
+  "vep_dir": {
+    "basename": "ed620a5a2bdf6cb09b171c3219699562+542550",
+    "class": "Directory",
+    "location": "keep:ed620a5a2bdf6cb09b171c3219699562+542550"
+  },
+  "vep_fasta_file": {
+    "basename": "fastafile",
+    "class": "File",
+    "location": "keep:00528ccfa8b07fd08907077b1f4fe3e9+927/fastafile",
+    "size": 1187056726
+  },
+  "vep_output_file": "vep-output.vcf.gz",
+  "ref": {
+    "class": "File",
+    "basename": "hg38.fa",
+    "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/hg38.fa",
+    "secondaryFiles": [
+      {
         "class": "File",
-        "location": "keep:b3a8a85e970122c02ea058eb43457b07+177/ksa_hg38.hapl"
-    },
-    "dv_mode": "standard",
-    "aligned_bam_output": "aligned.bam",
-    "dv_model_type": "WGS",
-    "dv_output_vcf": "variants.dv.vcf.gz",
-    "dv_output_gvcf": "variants.dv.gvcf.gz",
-    "eh_output_prefix": "eh_repeats",
-    "combined_vcf_name": "combined.vcf.gz",
-    "normalized_vcf_name": "normalized.vcf.gz",
-    "metadata": {
-        "class": "File",
-        "location": "keep:fc3aa7c59283c637f92b07311446b9aa+93424/HD.clinical.yaml"
-    },
-    "slivar_gnomad": {
-        "class": "File",
-        "location": "keep:148bcb74e5d8268ac486d315e657f70b+3240/gnomad.hg38.genomes.v3.fix.zip"
-    },
-    "vep_assembly": "GRCh38",
-    "vep_output_file": "vep-output.vcf.gz",
-    "pavs_custom_file": {
-        "class": "File",
-        "path": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.pavs.plugin.38.vcf.gz"
-    },
-    "pavs_custom_args": "PAVS,vcf,exact",
-    "go_custom_file": {
-        "class": "File",
-        "path": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.go.bed.gz"
-    },
-    "go_custom_args": "GO_CLASSES,bed,overlap",
-    "hpo_custom_file": {
-        "class": "File",
-        "path": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.pheno.bed.gz"
-    },
-    "hpo_custom_args": "PHENOTYPE,bed,overlap",
-    "ppi_custom_file": {
-        "class": "File",
-        "path": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.ppi.bed.gz"
-    },
-    "ppi_custom_args": "PPI,bed,overlap",
-    "vep_dir": {
-        "class": "Directory",
-        "path": "keep:ed620a5a2bdf6cb09b171c3219699562+542550"
-    },
-    "vep_fasta_file": {
-        "class": "File",
-        "path": "keep:00528ccfa8b07fd08907077b1f4fe3e9+927/fastafile"
-    },
-    "exomiser_data": {
-        "class": "Directory",
-        "location": "keep:00cbcbd45419c2f051889639deff3431+39145"
-    },
-    "exomiser_assembly": "hg38",
-    "exomiser_data_version": "2512",
-    "hpo_terms": "HP:0002072,HP:0000726,HP:0000716,HP:0001288,HP:0001260",
-    "exomiser_top_genes": 10,
-    "genomelinter_output_name": "genomelinter-output.txt"
+        "basename": "hg38.fa.fai",
+        "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/hg38.fa.fai"
+      }
+    ]
+  },
+  "exomiser_data": {
+    "class": "Directory",
+    "location": "keep:00cbcbd45419c2f051889639deff3431+39145"
+  },
+  "exomiser_assembly": "hg38",
+  "exomiser_data_version": "2512",
+  "hpo_terms": "HP:0002072,HP:0000726,HP:0002311",
+  "exomiser_top_genes": 10,
+  "hapl": {
+    "class": "File",
+    "basename": "ksa_hg38.hapl",
+    "location": "keep:d704d713f7039bbc4026d55fafec7c33+2743/ksa_hg38.hapl"
+  },
+  "dv_mode": "standard"
 }

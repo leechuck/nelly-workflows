@@ -1,84 +1,89 @@
 {
-    "ref_prefix": "GRCh38",
-    "sample_name": "sample",
-    "graph": {
+  "ref_prefix": "GRCh38",
+  "sample_name": "sample",
+  "graph": {
+    "class": "File",
+    "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/ksa_hg38.gbz"
+  },
+  "_comment_ref": "MUST be the UCSC chr-named hg38.fa: the vg-giraffe BAM is chr-named, and this single ref drives samtools-sort/markdup + DeepVariant + ExpansionHunter + bcftools-norm. Do NOT use the Ensembl-numeric fastafile here (contig-name mismatch); VEP keeps its own numeric vep_fasta_file below.",
+  "ref": {
+    "class": "File",
+    "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/hg38.fa",
+    "secondaryFiles": [
+      {
         "class": "File",
-        "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/ksa_hg38.gbz"
-    },
-    "_comment_ref": "MUST be the UCSC chr-named hg38.fa: the vg-giraffe BAM is chr-named, and this single ref drives samtools-sort/markdup + DeepVariant + ExpansionHunter + bcftools-norm. Do NOT use the Ensembl-numeric fastafile here (contig-name mismatch); VEP keeps its own numeric vep_fasta_file below.",
-    "ref": {
-        "class": "File",
-        "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/hg38.fa",
-        "secondaryFiles": [
-            {"class": "File", "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/hg38.fa.fai"}
-        ]
-    },
-    "reads1": {
-        "class": "File",
-        "location": "keep:b4a8fbf918d6744687ac1b775456ca79+536/NIST-small_R1.fastq.gz"},
-    "reads2": {
-        "class": "File",
-        "location": "keep:b4a8fbf918d6744687ac1b775456ca79+536/NIST-small_R2.fastq.gz"},
-    "hapl": {
-        "class": "File",
-        "location": "keep:b3a8a85e970122c02ea058eb43457b07+177/ksa_hg38.hapl"
-    },
-    "dv_mode": "standard",
-    "aligned_bam_output": "aligned.bam",
-    "dv_model_type": "WGS",
-    "dv_output_vcf": "variants.dv.vcf.gz",
-    "dv_output_gvcf": "variants.dv.gvcf.gz",
-    "_comment_eh_variant_catalog": "Optional. Defaults to Illumina's GRCh38 catalog baked into the dunglam2k/expansionhunter-grch38:v5.0.0 image. To override, add an 'eh_variant_catalog' File entry pointing at a custom catalog in Keep.",
-    "eh_output_prefix": "eh_repeats",
-    "combined_vcf_name": "combined.vcf.gz",
-    "normalized_vcf_name": "normalized.vcf.gz",
-    "metadata": {
-        "class": "File",
-        "location": "keep:3c9215d6f3acbd11de88305e3187dfc0+57/sample.yaml"
-    },
-    "slivar_gnomad": {
-        "class": "File",
-        "location": "keep:148bcb74e5d8268ac486d315e657f70b+3240/gnomad.hg38.genomes.v3.fix.zip"
-    },
-    "_comment_slivar": "slivar_info / slivar_sample_expr intentionally omitted: the strengthened rarity+quality gate now lives as the validated default in main-vg.cwl. Do not re-add a stale override here (an old permissive override was the reason a required setting drifted out of sync).",
-    "vep_assembly": "GRCh38",
-    "vep_output_file": "vep-output.vcf.gz",
-    "pavs_custom_file": {
-        "class": "File",
-        "path": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.pavs.plugin.38.vcf.gz"
-    },
-    "pavs_custom_args": "PAVS,vcf,exact",
-    "go_custom_file": {
-        "class": "File",
-        "path": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.go.bed.gz"
-    },
-    "go_custom_args": "GO_CLASSES,bed,overlap",
-    "hpo_custom_file": {
-        "class": "File",
-        "path": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.pheno.bed.gz"
-    },
-    "hpo_custom_args": "PHENOTYPE,bed,overlap",
-    "ppi_custom_file": {
-        "class": "File",
-        "path": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.ppi.bed.gz"
-    },
-    "ppi_custom_args": "PPI,bed,overlap",
-    "vep_dir": {
-        "class": "Directory",
-        "path": "keep:ed620a5a2bdf6cb09b171c3219699562+542550"
-    },
-    "vep_fasta_file": {
-        "class": "File",
-        "path": "keep:00528ccfa8b07fd08907077b1f4fe3e9+927/fastafile"
-    },
-    "_comment_patient_context": "Patient sex and HPO terms are derived at run time from the Genoor metadata file above. Included phenotype URIs should identify HPO terms (for example http://purl.obolibrary.org/obo/HP_0000726), and patient.gender must be male or female. For a legacy Genoor record whose phenotype URIs are null, supply the curated comma-separated list as the optional hpo_terms input; coded metadata always takes precedence.",
-    "_comment_exomiser": "Exomiser phenotype-driven prioritisation. exomiser_data is the 2512 hg38+phenotype bundle Keep collection (required).",
-    "exomiser_data": {
-        "class": "Directory",
-        "location": "keep:00cbcbd45419c2f051889639deff3431+39145"
-    },
-    "exomiser_assembly": "hg38",
-    "exomiser_data_version": "2512",
-    "exomiser_top_genes": 10,
-    "genomelinter_output_name": "genomelinter-output.txt"
+        "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/hg38.fa.fai"
+      }
+    ]
+  },
+  "reads1": {
+    "class": "File",
+    "location": "keep:b4a8fbf918d6744687ac1b775456ca79+536/NIST-small_R1.fastq.gz"
+  },
+  "reads2": {
+    "class": "File",
+    "location": "keep:b4a8fbf918d6744687ac1b775456ca79+536/NIST-small_R2.fastq.gz"
+  },
+  "hapl": {
+    "class": "File",
+    "location": "keep:d704d713f7039bbc4026d55fafec7c33+2743/ksa_hg38.hapl"
+  },
+  "dv_mode": "standard",
+  "aligned_bam_output": "aligned.bam",
+  "dv_model_type": "WGS",
+  "dv_output_vcf": "variants.dv.vcf.gz",
+  "dv_output_gvcf": "variants.dv.gvcf.gz",
+  "_comment_eh_variant_catalog": "Optional. Defaults to Illumina's GRCh38 catalog baked into the dunglam2k/expansionhunter-grch38:v5.0.0 image. To override, add an 'eh_variant_catalog' File entry pointing at a custom catalog in Keep.",
+  "eh_output_prefix": "eh_repeats",
+  "combined_vcf_name": "combined.vcf.gz",
+  "normalized_vcf_name": "normalized.vcf.gz",
+  "metadata": {
+    "class": "File",
+    "location": "keep:3c9215d6f3acbd11de88305e3187dfc0+57/sample.yaml"
+  },
+  "slivar_gnomad": {
+    "class": "File",
+    "location": "keep:148bcb74e5d8268ac486d315e657f70b+3240/gnomad.hg38.genomes.v3.fix.zip"
+  },
+  "_comment_slivar": "slivar_info / slivar_sample_expr intentionally omitted: the strengthened rarity+quality gate now lives as the validated default in main-vg.cwl. Do not re-add a stale override here (an old permissive override was the reason a required setting drifted out of sync).",
+  "vep_assembly": "GRCh38",
+  "vep_output_file": "vep-output.vcf.gz",
+  "pavs_custom_file": {
+    "class": "File",
+    "path": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.pavs.plugin.38.vcf.gz"
+  },
+  "pavs_custom_args": "PAVS,vcf,exact",
+  "go_custom_file": {
+    "class": "File",
+    "path": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.go.bed.gz"
+  },
+  "go_custom_args": "GO_CLASSES,bed,overlap",
+  "hpo_custom_file": {
+    "class": "File",
+    "path": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.pheno.bed.gz"
+  },
+  "hpo_custom_args": "PHENOTYPE,bed,overlap",
+  "ppi_custom_file": {
+    "class": "File",
+    "path": "keep:148bcb74e5d8268ac486d315e657f70b+3240/sorted.plugin.ppi.bed.gz"
+  },
+  "ppi_custom_args": "PPI,bed,overlap",
+  "vep_dir": {
+    "class": "Directory",
+    "path": "keep:ed620a5a2bdf6cb09b171c3219699562+542550"
+  },
+  "vep_fasta_file": {
+    "class": "File",
+    "path": "keep:00528ccfa8b07fd08907077b1f4fe3e9+927/fastafile"
+  },
+  "_comment_patient_context": "Patient sex and HPO terms are derived at run time from the Genoor metadata file above. Included phenotype URIs should identify HPO terms (for example http://purl.obolibrary.org/obo/HP_0000726), and patient.gender must be male or female. For a legacy Genoor record whose phenotype URIs are null, supply the curated comma-separated list as the optional hpo_terms input; coded metadata always takes precedence.",
+  "_comment_exomiser": "Exomiser phenotype-driven prioritisation. exomiser_data is the 2512 hg38+phenotype bundle Keep collection (required).",
+  "exomiser_data": {
+    "class": "Directory",
+    "location": "keep:00cbcbd45419c2f051889639deff3431+39145"
+  },
+  "exomiser_assembly": "hg38",
+  "exomiser_data_version": "2512",
+  "exomiser_top_genes": 10,
+  "genomelinter_output_name": "genomelinter-output.txt"
 }
