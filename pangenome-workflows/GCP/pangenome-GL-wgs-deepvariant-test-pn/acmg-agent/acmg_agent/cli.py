@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
+import re
 import sys
 import pysam
 
@@ -13,9 +15,11 @@ from acmg_agent.candidates import (
     read_tsv,
     select_candidates,
 )
+from acmg_agent.agent import run_all
 from acmg_agent.classify import classify
 from acmg_agent.criteria import evaluate_all
 from acmg_agent.evidence import build_evidence
+from acmg_agent.llm_backends import select_backend_from_env
 from acmg_agent.inputs import (
     ClinvarIndex,
     VepIndex,
@@ -24,6 +28,7 @@ from acmg_agent.inputs import (
     read_slivar_info,
 )
 from acmg_agent.repeats import load_strchive
+from acmg_agent.model import Evidence
 from acmg_agent.report import (
     build_deterministic_narrative,
     serialize_candidate_assessment,
@@ -146,6 +151,16 @@ _CLASS_RANK = {
 }
 
 
+def _candidate_key(c: dict) -> tuple[str, str, str, str, str]:
+    return (
+        str(c.get("gene", "")),
+        str(c.get("chrom", "")),
+        str(c.get("pos", "")),
+        str(c.get("ref", "")),
+        str(c.get("alt", "")),
+    )
+
+
 def cmd_assess(args: argparse.Namespace) -> int:
     errors: list[str] = []
     llm_info = {"backend": "none", "model": None, "status": "disabled"}
@@ -207,11 +222,9 @@ def cmd_assess(args: argparse.Namespace) -> int:
             variants_rows = read_tsv(args.variants_tsv) if args.variants_tsv and Path(args.variants_tsv).exists() else []
             raw_candidates = select_candidates(genes_rows, variants_rows, top=args.top)
 
-        # Evaluate ACMG evidence, criteria, and classification for each candidate
-        assessed_by_key: dict[tuple[str, str, str, str, str], dict] = {}
-        assessed_list: list[dict] = []
-        ev_Criteria_pairs: list[tuple[dict, object, list]] = []
-
+        # Deterministic pass first: the WP4 agent layer adjusts these criteria
+        # afterwards under tool-call/time budgets, fail-closed.
+        pairs: list[tuple[dict, Evidence, list, int, tuple[str, str, str, str, str]]] = []
         for c in raw_candidates:
             ev = build_evidence(
                 c,
@@ -221,38 +234,81 @@ def cmd_assess(args: argparse.Namespace) -> int:
                 gene_table=gene_table,
                 slivar_info=slivar_info,
             )
-            det_criteria = evaluate_all(ev)
-            final_criteria = det_criteria
-            rationale_override = None
+            det = evaluate_all(ev)
+            if args.from_vcf or not args.genes_tsv:
+                tier = _CLASS_RANK.get(classify(det).class_, 2)
+            else:
+                tier = rank_key(c)[0]
+            pairs.append((c, ev, det, tier, _candidate_key(c)))
 
-            if not args.no_llm:
+        # --- WP4 LLM layer: one bounded review pass (tier 0-2 + top 5, <= 8
+        # variants, 12 tool calls and 6 min each, 50 min global, contract
+        # enforced in agent.validate_submission; rejected/failed/timeout
+        # fall back to the deterministic criteria). ------------------------
+        llm_status = "disabled"
+        assistant: list[dict] | None = None
+        review_order: range | list[int]
+        if args.from_vcf or not args.genes_tsv:
+            review_order = list(range(len(pairs)))
+        else:
+            # review priority follows the re-ranked candidate order
+            review_order = sorted(range(len(pairs)), key=lambda i: rank_key(pairs[i][0]))
+        if not args.no_llm:
+            if getattr(args, "sample", None):
+                os.environ.setdefault("ACMG_SAMPLE", str(args.sample))
+            try:
+                backend = select_backend_from_env()
+            except Exception as exc:
+                backend = None
+                llm_status = "failed"
+                errors.append(f"LLM backend selection failed: {exc}")
+            if backend is not None:
+                llm_info["backend"] = str(getattr(backend, "backend_name", "llama"))
+                llm_info["model"] = getattr(backend, "model_name", None)
+                ordered = [pairs[i] for i in review_order]
+                agent_cands = [
+                    {"evidence": ev, "criteria": list(det), "tier": tier, "rank": r}
+                    for r, (_c, ev, det, tier, _k) in enumerate(ordered)
+                ]
                 try:
-                    from acmg_agent.agent import run_agent  # type: ignore
-                    from acmg_agent.llm_backends import select_backend_from_env  # type: ignore
+                    _reviewed, llm_status = run_all(agent_cands, backend)
+                    assistant = agent_cands
+                except Exception as exc:
+                    errors.append(f"LLM layer failed: {exc}")
+                    llm_status = "failed"
+                llm_info["status"] = llm_status
 
-                    backend = select_backend_from_env()
-                    if backend is not None:
-                        res = run_agent(ev, det_criteria, backend)
-                        final_criteria = getattr(res, "criteria", det_criteria)
-                        rationale_override = getattr(res, "rationale", None)
-                        llm_info["status"] = getattr(res, "status", "ok")
-                except Exception:
-                    pass
-
+        # Serialise in review order; reviewed candidates carry the agent's
+        # (validated) criteria plus adjusted_by_agent flags.
+        assessed_by_key: dict[tuple[str, str, str, str, str], dict] = {}
+        assessed_list: list[dict] = []
+        for idx_pos, pair_idx in enumerate(review_order):
+            c, ev, det, tier, key = pairs[pair_idx]
+            if assistant is not None:
+                agent = assistant[idx_pos]
+                final_criteria = agent["criteria"]
+                adjusted = list(agent.get("adjusted") or [])
+                ok = agent.get("agent_status") == "ok"
+                agent_rationale = agent.get("agent_rationale") if ok else None
+                agent_narrative = agent.get("narrative") if ok else None
+            else:
+                final_criteria = det
+                adjusted = []
+                agent_rationale = None
+                agent_narrative = None
             clf = classify(final_criteria)
-            tier = rank_key(c)[0] if not args.from_vcf else _CLASS_RANK.get(clf.class_, 2)
             item = serialize_candidate_assessment(
                 c,
                 ev,
                 final_criteria,
                 clf,
                 tier=tier,
-                rationale=rationale_override,
+                adjusted_codes=adjusted,
+                agent_rationale=agent_rationale,
+                agent_narrative=agent_narrative,
             )
             assessed_list.append(item)
-            key = (c.get("gene", ""), str(c.get("chrom", "")), str(c.get("pos", "")), str(c.get("ref", "")), str(c.get("alt", "")))
             assessed_by_key[key] = item
-            ev_Criteria_pairs.append((c, ev, final_criteria))
 
         if args.from_vcf or not args.genes_tsv:
             assessed_list.sort(key=lambda a: (_CLASS_RANK.get(a["classification"], 9), -a["points"], a["gene"]))
@@ -337,10 +393,14 @@ def cmd_assess(args: argparse.Namespace) -> int:
                     })
 
         narrative = build_deterministic_narrative(leading_dict, near_ties_list, assessed_list, expansions)
+        phenotype = (args.phenotype or "")
         data = {
             "schema_version": 1,
             "sample": args.sample,
             "strchive_used": strchive_used,
+            "sex": args.sex or None,
+            "hpo_terms": [t for t in re.split(r"[\s,]+", args.hpo_terms or "") if t],
+            "phenotype": phenotype or None,
             "llm": llm_info,
             "leading_candidate": leading_dict,
             "near_tie_alternatives": near_ties_list,
@@ -391,6 +451,11 @@ def build_parser() -> argparse.ArgumentParser:
     ass.add_argument("--from-vcf", action="store_true", help="Evaluate all variants in --vep-vcf without Exomiser TSVs")
     ass.add_argument("--no-llm", action="store_true", help="Run deterministic ACMG engine only")
     ass.add_argument("--sample", default="proband")
+    ass.add_argument("--hpo-terms", default="", help="HPO term IDs (comma or whitespace separated), free-text phenotype labels go through env ACMG_PHENOTYPE")
+    # Phenotype labels arrive via the ACMG_PHENOTYPE env var (CWL
+    # EnvVarRequirement), keeping shell/hostile characters out of argv.
+    ass.add_argument("--phenotype", default=os.environ.get("ACMG_PHENOTYPE", ""))
+    ass.add_argument("--sex", default="")
     ass.add_argument("--top", type=int, default=15)
     ass.add_argument("--output-md", required=True)
     ass.add_argument("--output-json", required=True)

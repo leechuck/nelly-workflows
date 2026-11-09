@@ -14,12 +14,13 @@ def _format_variant_str(chrom: str, pos: int | str, ref: str, alt: str) -> str:
     return f"{c}:{pos} {ref}>{alt}"
 
 
-def serialize_criterion(c: Criterion) -> dict:
+def serialize_criterion(c: Criterion, adjusted_by_agent: bool = False) -> dict:
     return {
         "code": c.code,
         "status": c.status,
         "strength": c.strength,
         "rationale": c.rationale,
+        "adjusted_by_agent": adjusted_by_agent,
     }
 
 
@@ -31,7 +32,11 @@ def serialize_candidate_assessment(
     tier: int,
     llm_adjustments: list[dict] | None = None,
     rationale: str | None = None,
+    adjusted_codes: list[str] | None = None,
+    agent_rationale: str | None = None,
+    agent_narrative: str | None = None,
 ) -> dict:
+    adjusted_set = set(adjusted_codes or [])
     met_codes = [
         f"{c.code} ({c.strength})" if c.strength else c.code
         for c in criteria
@@ -70,8 +75,13 @@ def serialize_candidate_assessment(
             "clinvar_stars": ev.clinvar_stars,
             "exomiser_pheno_score": ev.human_pheno_score,
         },
-        "criteria": [serialize_criterion(c) for c in criteria],
+        "criteria": [
+            serialize_criterion(c, adjusted_by_agent=(c.code in adjusted_set))
+            for c in criteria
+        ],
         "llm_adjustments": llm_adjustments or [],
+        "agent_rationale": agent_rationale,
+        "agent_narrative": agent_narrative,
         "rationale": rationale or default_rationale,
     }
 

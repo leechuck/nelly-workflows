@@ -7,7 +7,7 @@
     },
     "hapl": {
         "class": "File",
-        "location": "keep:b3a8a85e970122c02ea058eb43457b07+177/ksa_hg38.hapl"
+        "location": "keep:d704d713f7039bbc4026d55fafec7c33+2743/ksa_hg38.hapl"
     },
     "ref": {
         "class": "File",
