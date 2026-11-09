@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
+import re
 import sys
 import pysam
 
@@ -379,9 +381,13 @@ def cmd_assess(args: argparse.Namespace) -> int:
                     })
 
         narrative = build_deterministic_narrative(leading_dict, near_ties_list, assessed_list, expansions)
+        phenotype = (args.phenotype or "")
         data = {
             "schema_version": 1,
             "sample": args.sample,
+            "sex": args.sex or None,
+            "hpo_terms": [t for t in re.split(r"[\s,]+", args.hpo_terms or "") if t],
+            "phenotype": phenotype or None,
             "llm": llm_info,
             "leading_candidate": leading_dict,
             "near_tie_alternatives": near_ties_list,
@@ -431,6 +437,11 @@ def build_parser() -> argparse.ArgumentParser:
     ass.add_argument("--from-vcf", action="store_true", help="Evaluate all variants in --vep-vcf without Exomiser TSVs")
     ass.add_argument("--no-llm", action="store_true", help="Run deterministic ACMG engine only")
     ass.add_argument("--sample", default="proband")
+    ass.add_argument("--hpo-terms", default="", help="HPO term IDs (comma or whitespace separated), free-text phenotype labels go through env ACMG_PHENOTYPE")
+    # Phenotype labels arrive via the ACMG_PHENOTYPE env var (CWL
+    # EnvVarRequirement), keeping shell/hostile characters out of argv.
+    ass.add_argument("--phenotype", default=os.environ.get("ACMG_PHENOTYPE", ""))
+    ass.add_argument("--sex", default="")
     ass.add_argument("--top", type=int, default=15)
     ass.add_argument("--output-md", required=True)
     ass.add_argument("--output-json", required=True)
