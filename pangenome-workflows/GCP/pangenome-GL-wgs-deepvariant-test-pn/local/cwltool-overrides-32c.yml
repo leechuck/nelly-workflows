@@ -1,0 +1,21 @@
+cwltool:overrides:
+  vg-giraffe-bam.cwl:
+    requirements:
+      ResourceRequirement:
+        coresMin: 32
+  kmc.cwl:
+    requirements:
+      ResourceRequirement:
+        coresMin: 16
+  samtools-sort.cwl:
+    requirements:
+      ResourceRequirement:
+        coresMin: 16
+  samtools-markdup.cwl:
+    requirements:
+      ResourceRequirement:
+        coresMin: 16
+  deepvariant.cwl:
+    requirements:
+      ResourceRequirement:
+        coresMin: 24

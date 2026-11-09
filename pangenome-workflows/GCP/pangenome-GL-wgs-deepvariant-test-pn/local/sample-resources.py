@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Per-step Docker container resource sampler (wall time, peak RSS, cgroup max memory).
+"""Per-step container / process-tree resource sampler (wall time, peak RSS, cgroup max memory).
 
-Polls running Docker containers every `interval` seconds and reads cgroup v1/v2 memory
-stats directly from `/sys/fs/cgroup/` (falling back to `docker stats --no-stream`), so
-short-lived and hours-long CWL step containers alike are recorded without needing
-`/usr/bin/time -v` inside the container images.
+Supports both:
+- Docker containers (cbontsr01): polls `docker ps` and reads `/sys/fs/cgroup/`
+- Singularity / Apptainer under `cwltool --singularity` (IBEX): walks the process tree
+  of each `singularity` / `Singularity runtime parent` step and sums RSS across all
+  descendant processes in that step's subtree, so parallel CWL steps are measured
+  independently.
 
 Usage:
   python3 local/sample-resources.py --out /path/to/step-resources.tsv [--md /path/to/step-resources.md]
@@ -15,11 +17,13 @@ from __future__ import annotations
 import argparse
 import glob
 import os
+import re
 import signal
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+
 
 
 @dataclass
@@ -104,6 +108,80 @@ def list_running_containers() -> list[tuple[str, str, str]]:
     return res
 
 
+def list_singularity_steps() -> list[tuple[str, str, str, int]]:
+    """Return [(cid, image, command, subtree_rss_bytes), ...] for active Singularity/Apptainer steps."""
+    try:
+        out = subprocess.check_output(
+            ["ps", "-eo", "pid=,ppid=,rss=,args="],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        return []
+
+    procs: dict[int, tuple[int, int, str]] = {}
+    children: dict[int, list[int]] = {}
+    for line in out.splitlines():
+        parts = line.strip().split(None, 3)
+        if len(parts) < 4:
+            continue
+        try:
+            pid = int(parts[0])
+            ppid = int(parts[1])
+            rss_kb = int(parts[2])
+        except ValueError:
+            continue
+        args = parts[3]
+        procs[pid] = (ppid, rss_kb * 1024, args)
+        children.setdefault(ppid, []).append(pid)
+
+    def is_sing_proc(args: str) -> bool:
+        return (
+            "Singularity runtime parent" in args
+            or "Apptainer runtime parent" in args
+            or args.startswith("singularity ")
+            or args.startswith("apptainer ")
+            or "/singularity " in args
+            or "/apptainer " in args
+        )
+
+    # Top-level singularity/apptainer roots (parent is not itself a singularity wrapper)
+    roots: list[int] = []
+    for pid, (ppid, _rss, args) in procs.items():
+        if is_sing_proc(args):
+            parent_args = procs.get(ppid, (0, 0, ""))[2]
+            if not is_sing_proc(parent_args):
+                roots.append(pid)
+
+    res: list[tuple[str, str, str, int]] = []
+    for root in roots:
+        # BFS over subtree
+        queue = [root]
+        seen = set()
+        total_rss = 0
+        sif_name = ""
+        first_payload_cmd = ""
+        while queue:
+            cur = queue.pop(0)
+            if cur in seen or cur not in procs:
+                continue
+            seen.add(cur)
+            _ppid, rss_b, c_args = procs[cur]
+            total_rss += rss_b
+            if not sif_name:
+                m = re.search(r"([^\s/]+\.sif)\b", c_args)
+                if m:
+                    sif_name = m.group(1)
+            if not is_sing_proc(c_args) and not first_payload_cmd:
+                first_payload_cmd = c_args
+            queue.extend(children.get(cur, []))
+        root_args = procs[root][2]
+        cmd = first_payload_cmd or root_args
+        img = sif_name or (cmd.split()[0] if cmd else "singularity")
+        res.append((f"sing-{root}", img, cmd, total_rss))
+    return res
+
+
 def write_outputs(records: dict[str, ContainerRecord], tsv_path: str, md_path: str | None) -> None:
     rows = sorted(records.values(), key=lambda r: r.first_seen)
     with open(tsv_path, "w") as fh:
@@ -136,8 +214,10 @@ def main() -> int:
     ap.add_argument("--interval", type=float, default=1.0, help="Polling interval in seconds")
     args = ap.parse_args()
 
-    # Ignore containers that were already running before this workflow started (long-lived services on ontolinator)
-    baseline_cids = {cid for cid, _, _ in list_running_containers()}
+    # Ignore containers/steps that were already running before this workflow started
+    baseline_cids = {cid for cid, _, _ in list_running_containers()} | {
+        cid for cid, _, _, _ in list_singularity_steps()
+    }
     records: dict[str, ContainerRecord] = {}
     stop = False
 
@@ -150,7 +230,28 @@ def main() -> int:
 
     while not stop:
         now = time.time()
-        for cid, image, cmd in list_running_containers():
+        docker_rows = list_running_containers()
+        if docker_rows:
+            for cid, image, cmd in docker_rows:
+                if cid in baseline_cids:
+                    continue
+                rec = records.get(cid)
+                if rec is None:
+                    rec = ContainerRecord(
+                        cid=cid,
+                        image=image,
+                        command=cmd,
+                        first_seen=now,
+                        last_seen=now,
+                    )
+                    records[cid] = rec
+                else:
+                    rec.last_seen = now
+                rss, cg_max = read_cgroup_memory(cid)
+                rec.peak_rss_bytes = max(rec.peak_rss_bytes, rss)
+                rec.peak_cgroup_bytes = max(rec.peak_cgroup_bytes, cg_max)
+                rec.samples += 1
+        for cid, image, cmd, subtree_rss in list_singularity_steps():
             if cid in baseline_cids:
                 continue
             rec = records.get(cid)
@@ -165,9 +266,14 @@ def main() -> int:
                 records[cid] = rec
             else:
                 rec.last_seen = now
-            rss, cg_max = read_cgroup_memory(cid)
-            rec.peak_rss_bytes = max(rec.peak_rss_bytes, rss)
-            rec.peak_cgroup_bytes = max(rec.peak_cgroup_bytes, cg_max)
+                if rec.image == "singularity" and image != "singularity":
+                    rec.image = image
+                if ("singularity" in rec.command or "runtime parent" in rec.command) and (
+                    "singularity" not in cmd and "runtime parent" not in cmd
+                ):
+                    rec.command = cmd
+            rec.peak_rss_bytes = max(rec.peak_rss_bytes, subtree_rss)
+            rec.peak_cgroup_bytes = max(rec.peak_cgroup_bytes, subtree_rss)
             rec.samples += 1
         write_outputs(records, args.out, args.md)
         time.sleep(args.interval)

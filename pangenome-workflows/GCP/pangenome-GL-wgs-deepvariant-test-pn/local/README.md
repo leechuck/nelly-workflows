@@ -1,10 +1,10 @@
 # Local Execution & Cloud Deployment Guide (`local/`)
 
-This directory contains everything needed to run the modernised `nelly-workflows` pangenome pipeline (`main-vg.cwl`, `local/test-tail.cwl`, and `benchmark/benchmark-giab.cwl`) on a single host with `cwltool` + Docker (exercised on `cbontsr01.kaust.edu.sa` / ontolinator, 256 threads, 1 TB RAM), or to provision an AWS / Oracle Cloud deployment.
+This directory contains everything needed to run the modernised `nelly-workflows` pangenome pipeline (`main-vg.cwl`, `align-and-call.cwl`, `local/test-tail.cwl`, and `benchmark/benchmark-giab.cwl`) on a single host with `cwltool` + Docker (`HOST=cbontsr01`, exercised on `cbontsr01.kaust.edu.sa` / ontolinator, 256 threads, 1 TB RAM), on KAUST IBEX with Slurm + Singularity (`HOST=ibex`, `/ibex/scratch/projects/c2014/nelly-local/`), or to provision an AWS / Oracle Cloud deployment.
 
 ## 1. Host Prerequisites & Directory Layout
 
-All local paths live under `/data/nelly-local/` (override via `NELLY_LOCAL_ROOT`), with `TMPDIR=/data/nelly-local/tmp` (never `/tmp`):
+All local paths live under `/data/nelly-local/` on `cbontsr01` or `/ibex/scratch/projects/c2014/nelly-local/` on IBEX (override via `NELLY_LOCAL_ROOT`), with `TMPDIR=$WORK_ROOT/tmp` (never `/tmp`). `local/run.sh` automatically rewrites `/data/nelly-local` paths in the committed `local/*.json` input templates to `$WORK_ROOT` at runtime when running on IBEX:
 
 ```text
 /data/nelly-local/
@@ -94,19 +94,22 @@ setsid nohup bash local/run.sh \
 
 ### Phase 2a: Alignment + Variant Calling Sub-Workflow (`align-and-call.cwl`)
 ```bash
-# Tay-Sachs (standard DeepVariant 1.10)
+# On cbontsr01 (Docker):
 setsid nohup bash local/run.sh \
   /data/nelly-local/runs/align-TS-standard \
   align-and-call.cwl \
   local/align-and-call.TS.standard.json \
   > /data/nelly-local/logs/align-TS-standard.log 2>&1 < /dev/null &
 
-# Huntington (standard DeepVariant 1.10)
 setsid nohup bash local/run.sh \
   /data/nelly-local/runs/align-HD-standard \
   align-and-call.cwl \
   local/align-and-call.HD.standard.json \
   > /data/nelly-local/logs/align-HD-standard.log 2>&1 < /dev/null &
+
+# On IBEX (Slurm + Singularity, --account=pi-hohndor, 32 cores / 256 GB RAM / 2 days):
+sbatch --job-name=align-TS-standard local/sbatch-align-and-call.sh TS standard
+sbatch --job-name=align-HD-standard local/sbatch-align-and-call.sh HD standard
 ```
 
 ### Phase 2b: Full WGS End-to-End (`main-vg.cwl`)
