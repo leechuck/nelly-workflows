@@ -70,7 +70,8 @@
   "ppi_custom_args": "PPI,bed,overlap",
   "vep_dir": {
     "class": "Directory",
-    "path": "keep:ed620a5a2bdf6cb09b171c3219699562+542550"
+    "basename": "8afec8cdb796367144fa2bcec3a3dc59+624229",
+    "location": "keep:8afec8cdb796367144fa2bcec3a3dc59+624229"
   },
   "vep_fasta_file": {
     "class": "File",
