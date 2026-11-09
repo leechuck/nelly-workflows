@@ -28,10 +28,12 @@ def test_workflow_routes_metadata_context_to_both_consumers():
         "expansionhunter_sex",
         "exomiser_sex",
     ]
-    assert (
+    eh_sex_in = (
         steps["expansionhunter"]["in"]["sex"]
-        == "phenofrommetadata/expansionhunter_sex"
+        if "expansionhunter" in steps
+        else steps["align-and-call"]["in"]["eh_sex"]
     )
+    assert eh_sex_in == "phenofrommetadata/expansionhunter_sex"
     assert (
         steps["exomiser"]["in"]["hpo_terms"]
         == "phenofrommetadata/hpo_terms"

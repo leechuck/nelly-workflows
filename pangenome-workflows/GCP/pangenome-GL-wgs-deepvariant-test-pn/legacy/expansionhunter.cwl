@@ -1,0 +1,70 @@
+cwlVersion: v1.1
+class: CommandLineTool
+requirements:
+  InlineJavascriptRequirement: {}
+  ShellCommandRequirement: {}
+  DockerRequirement:
+    # Custom image that bakes Illumina's official GRCh38 catalog at
+    # /opt/eh-catalog/variant_catalog.json. Build with Dockerfile.expansionhunter
+    # in this directory. Pinned to v5.0.0 so the catalog matches the EH binary.
+    dockerPull: "dunglam2k/expansionhunter-grch38:v5.0.0"
+  ResourceRequirement:
+    coresMin: 8
+    ramMin: $(16 * 1024)
+baseCommand: bash
+arguments:
+  - -c
+  - |
+    set -euo pipefail
+    # Use the user-supplied variant catalog if provided, otherwise fall back to
+    # the catalog baked into the image at /opt/eh-catalog/variant_catalog.json.
+    CATALOG="${ return inputs.variant_catalog ? inputs.variant_catalog.path : inputs.variant_catalog_path; }"
+    test -s "$CATALOG" || { echo "Variant catalog not found at $CATALOG" >&2; exit 1; }
+    # ExpansionHunter v5 takes CRAM/BAM with index, FASTA with .fai, JSON catalog, and an output prefix.
+    # Sex defaults to "female" if not provided; for known clinical loci this is the safer default
+    # because HTT (autosomal) is genotyped identically either way and X-linked loci (FMR1, etc.)
+    # will be called as a single allele when --sex male is supplied.
+    ExpansionHunter --reads "$(inputs.aligned_reads.path)" --reference "$(inputs.ref.path)" --variant-catalog "$CATALOG" --sex "$(inputs.sex)" --output-prefix "$(inputs.output_prefix)" --threads $(runtime.cores)
+    # ExpansionHunter writes .vcf (uncompressed). bgzip + tabix-index so downstream concat works.
+    bgzip -f "$(inputs.output_prefix).vcf"
+    tabix -p vcf "$(inputs.output_prefix).vcf.gz"
+
+inputs:
+  aligned_reads:
+    type: File
+    secondaryFiles:
+      - .crai
+  ref:
+    type: File
+    secondaryFiles:
+      - .fai
+  variant_catalog:
+    type: File?
+  variant_catalog_path:
+    type: string
+    default: "/opt/eh-catalog/variant_catalog.json"
+  sex:
+    # The parent workflow derives and validates this as male|female from Genoor
+    # metadata.  Keep this a string so a value emitted by another CWL tool can be
+    # connected without document-scoped enum-symbol incompatibilities.
+    type: string
+    default: female
+  output_prefix:
+    type: string
+    default: eh_repeats
+
+outputs:
+  vcf:
+    type: File
+    secondaryFiles:
+      - .tbi
+    outputBinding:
+      glob: $(inputs.output_prefix).vcf.gz
+  json:
+    type: File
+    outputBinding:
+      glob: $(inputs.output_prefix).json
+  realigned_bam:
+    type: File?
+    outputBinding:
+      glob: $(inputs.output_prefix)_realigned.bam

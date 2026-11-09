@@ -19,12 +19,11 @@
     "reads2": {
         "class": "File",
         "location": "keep:b4a8fbf918d6744687ac1b775456ca79+536/NIST-small_R2.fastq.gz"},
-    "dist": {
+    "hapl": {
         "class": "File",
-        "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/ksa_hg38.dist"},
-    "min": {
-        "class": "File",
-        "location": "keep:56e94ed8e0d67d0c8e2616959d23ef2e+23423/ksa_hg38.min"},
+        "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/ksa_hg38.hapl"
+    },
+    "dv_mode": "standard",
     "aligned_bam_output": "aligned.bam",
     "dv_model_type": "WGS",
     "dv_output_vcf": "variants.dv.vcf.gz",

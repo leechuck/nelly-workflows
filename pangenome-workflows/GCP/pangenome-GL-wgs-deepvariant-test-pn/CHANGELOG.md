@@ -21,6 +21,15 @@ All notable changes to the annotation/interpretation tail of this workflow
   - `tests/test_benchmark_inputs.py`: Verifies that all required workflow inputs are provided across all 5 benchmark JSONs.
   - `tests/test_collect.py`: Unit test with fixture `tests/fixtures/happy/summary.csv` testing 4-decimal formatting and Yang baseline reporting.
 
+## [Unreleased] — Modernisation 2026-11 — alignment and calling core
+
+- Extracted `align-and-call.cwl` sub-workflow (KMC → vg giraffe 1.78 → samtools → DeepVariant / Pangenome-Aware DeepVariant → ExpansionHunter) so GIAB benchmarking and clinical pipeline share a single alignment/calling definition.
+- Upgraded `vg` from 1.54.0 to `quay.io/vgteam/vg:v1.78.0` and switched giraffe to haplotype-sampled personalised graphs (`--haplotype-name ksa_hg38.hapl --kff-name sample.kff --index-basename personal`), reducing peak RAM and removing the full-graph `.min` / `.dist` workflow inputs.
+- Added `kmc.cwl` (29-mer KFF counts via `coolmaksat/kmc`).
+- Upgraded `deepvariant.cwl` to `google/deepvariant:1.10.0` and added `pangenome-aware-deepvariant.cwl` (`google/deepvariant:pangenome_aware_deepvariant-1.10.0`), selectable via `dv_mode: standard | pangenome_aware` (default `standard`).
+- Bumped `bcftools` to `staphb/bcftools:1.22` and all CWL files in this directory to `cwlVersion: v1.2`.
+- Preserved pre-modernisation tool definitions under `legacy/` for reproducibility.
+
 ## [Unreleased] — Candidate re-ranking: repeat expansions and recessive genotypes
 
 Closes the two misses from the 18 Oct 2026 reruns, where the summary named a

@@ -1,10 +1,10 @@
-cwlVersion: v1.1
+cwlVersion: v1.2
 class: CommandLineTool
 requirements:
   InlineJavascriptRequirement: {}
   ShellCommandRequirement: {}
   DockerRequirement:
-    dockerPull: "quay.io/biocontainers/vg:1.54.0--h9ee0642_0"
+    dockerPull: "quay.io/vgteam/vg:v1.78.0"
   ResourceRequirement:
     coresMin: 10
     ramMin: $(36 * 1024)

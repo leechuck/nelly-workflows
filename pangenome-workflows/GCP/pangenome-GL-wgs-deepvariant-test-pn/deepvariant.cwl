@@ -1,10 +1,10 @@
-cwlVersion: v1.1
+cwlVersion: v1.2
 class: CommandLineTool
 requirements:
   InlineJavascriptRequirement: {}
   ShellCommandRequirement: {}
   DockerRequirement:
-    dockerPull: "google/deepvariant:1.6.0"
+    dockerPull: "google/deepvariant:1.10.0"
   ResourceRequirement:
     coresMin: 8
     ramMin: $(90 * 1024)

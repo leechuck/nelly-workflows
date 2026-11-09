@@ -1,7 +1,8 @@
-cwlVersion: v1.1
+cwlVersion: v1.2
 class: Workflow
 requirements:
   InlineJavascriptRequirement: {}
+  SubworkflowFeatureRequirement: {}
   ResourceRequirement:
     ramMin: $(1 * 1024)
     coresMin: 1
@@ -16,14 +17,17 @@ inputs:
     default: sample
   graph:
     type: File
+  hapl:
+    type: File
+  dv_mode:
+    type: string
+    default: standard
   ref:
     type: File
     secondaryFiles:
       - .fai
   reads1: File
   reads2: File
-  dist: File
-  min: File
   aligned_bam_output:
     type: string
     default: aligned.bam
@@ -118,19 +122,19 @@ inputs:
 outputs:
   output_aligned_cram:
     type: File
-    outputSource: samtools-markdup-index/aligned_reads_indexed
+    outputSource: align-and-call/aligned_cram
   output_dv_vcf:
     type: File
-    outputSource: deepvariant/vcf
+    outputSource: align-and-call/dv_vcf
   output_dv_gvcf:
     type: File
-    outputSource: deepvariant/gvcf
+    outputSource: align-and-call/dv_gvcf
   output_eh_vcf:
     type: File
-    outputSource: expansionhunter/vcf
+    outputSource: align-and-call/eh_vcf
   output_eh_json:
     type: File
-    outputSource: expansionhunter/json
+    outputSource: align-and-call/eh_json
   output_combined_vcf:
     type: File
     outputSource: bcftools-norm/normalized_vcf
@@ -154,80 +158,30 @@ outputs:
     outputSource: genomelinter/genomelinter_output
 
 steps:
-  vg-paths:
+  align-and-call:
+    run: align-and-call.cwl
     in:
+      fastq1: reads1
+      fastq2: reads2
       graph: graph
+      hapl: hapl
       ref_prefix: ref_prefix
-    out: [path_list]
-    run: vg-paths.cwl
-
-  vg-giraffe-bam:
-    in:
-      graph: graph
-      reads1: reads1
-      reads2: reads2
-      ref_paths: vg-paths/path_list
-      dist: dist
-      min: min
-      sample_name: sample_name
-      bam_output: aligned_bam_output
-    out: [aligned_reads]
-    run: vg-giraffe-bam.cwl
-
-  samtools-sort:
-    in:
-      aligned_reads: vg-giraffe-bam/aligned_reads
       ref: ref
-      ref_prefix: ref_prefix
-      sample_name: sample_name
-    out: [aligned_reads_sorted]
-    run: samtools-sort.cwl
-
-  samtools-index-sorted:
-    in:
-      aligned_reads: samtools-sort/aligned_reads_sorted
-    out: [aligned_reads_indexed]
-    run: samtools-index.cwl
-
-  samtools-markdup:
-    in:
-      aligned_reads: samtools-index-sorted/aligned_reads_indexed
-      ref: ref
-    out: [marked_reads]
-    run: samtools-markdup.cwl
-
-  samtools-markdup-index:
-    in:
-      aligned_reads: samtools-markdup/marked_reads
-    out: [aligned_reads_indexed]
-    run: samtools-index.cwl
-
-  deepvariant:
-    in:
-      model_type: dv_model_type
-      ref: ref
-      aligned_reads: samtools-markdup-index/aligned_reads_indexed
-      output_vcf: dv_output_vcf
-      output_gvcf: dv_output_gvcf
-    out: [vcf, gvcf]
-    run: deepvariant.cwl
-
-  expansionhunter:
-    in:
-      aligned_reads: samtools-markdup-index/aligned_reads_indexed
-      ref: ref
-      variant_catalog: eh_variant_catalog
-      # Genoor metadata is the single source of truth for patient sex.  The
-      # context step emits ExpansionHunter's lower-case vocabulary.
-      sex: phenofrommetadata/expansionhunter_sex
-      output_prefix: eh_output_prefix
-    out: [vcf, json]
-    run: expansionhunter.cwl
+      sample: sample_name
+      eh_catalog: eh_variant_catalog
+      eh_sex: phenofrommetadata/expansionhunter_sex
+      dv_mode: dv_mode
+      aligned_bam_output: aligned_bam_output
+      dv_model_type: dv_model_type
+      dv_output_vcf: dv_output_vcf
+      dv_output_gvcf: dv_output_gvcf
+      eh_output_prefix: eh_output_prefix
+    out: [aligned_cram, dv_vcf, dv_gvcf, eh_vcf, eh_json]
 
   bcftools-concat:
     in:
-      vcf_a: deepvariant/vcf
-      vcf_b: expansionhunter/vcf
+      vcf_a: align-and-call/dv_vcf
+      vcf_b: align-and-call/eh_vcf
       output_name: combined_vcf_name
     out: [combined_vcf]
     run: bcftools-concat.cwl
@@ -282,7 +236,7 @@ steps:
   exclude-eh-regions:
     in:
       input_vcf: bcftools-norm/normalized_vcf
-      eh_vcf: expansionhunter/vcf
+      eh_vcf: align-and-call/eh_vcf
     out: [filtered_vcf]
     run: exclude-eh-regions.cwl
 
@@ -308,7 +262,7 @@ steps:
     in:
       exomiser_genes_tsv: exomiser/exomiser_genes_tsv
       exomiser_variants_tsv: exomiser/exomiser_variants_tsv
-      eh_json: expansionhunter/json
+      eh_json: align-and-call/eh_json
       phenotype: phenofrommetadata/pheno_output
       top_genes: exomiser_top_genes
     out: [genomelinter_output]
