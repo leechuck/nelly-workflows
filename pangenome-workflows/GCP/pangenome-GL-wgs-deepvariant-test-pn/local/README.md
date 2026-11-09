@@ -92,7 +92,24 @@ setsid nohup bash local/run.sh \
   > /data/nelly-local/logs/tail-HD.log 2>&1 < /dev/null &
 ```
 
-### Phase 2: Full WGS End-to-End (`main-vg.cwl`)
+### Phase 2a: Alignment + Variant Calling Sub-Workflow (`align-and-call.cwl`)
+```bash
+# Tay-Sachs (standard DeepVariant 1.10)
+setsid nohup bash local/run.sh \
+  /data/nelly-local/runs/align-TS-standard \
+  align-and-call.cwl \
+  local/align-and-call.TS.standard.json \
+  > /data/nelly-local/logs/align-TS-standard.log 2>&1 < /dev/null &
+
+# Huntington (standard DeepVariant 1.10)
+setsid nohup bash local/run.sh \
+  /data/nelly-local/runs/align-HD-standard \
+  align-and-call.cwl \
+  local/align-and-call.HD.standard.json \
+  > /data/nelly-local/logs/align-HD-standard.log 2>&1 < /dev/null &
+```
+
+### Phase 2b: Full WGS End-to-End (`main-vg.cwl`)
 ```bash
 # Tay-Sachs (standard DeepVariant 1.10)
 setsid nohup bash local/run.sh \
