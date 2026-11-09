@@ -3,6 +3,24 @@
 All notable changes to the annotation/interpretation tail of this workflow
 (`main-vg.cwl`: VEP → slivar → genome-linter) are documented here.
 
+## [Unreleased] — GIAB benchmark workflow and evaluation tools (2026-11)
+
+### Added
+- **`benchmark/happy.cwl`**: Tool wrapper for Illumina/GA4GH `hap.py` (image `jmcdani20/hap.py:v0.3.12`) with `vcfeval` comparison engine, `--pass-only`, and optional stratification TSV/BED staging.
+- **`benchmark/benchmark-giab.cwl`**: End-to-end benchmarking workflow combining the reusable `align-and-call.cwl` core with `happy.cwl` against GIAB reference truth sets (HG002 and HG003) across calling modes (`standard` vs `pangenome_aware`).
+- **`benchmark/benchmark-giab-legacy.cwl`**: Baseline benchmarking workflow evaluating the pre-modernisation stack (vg 1.54 Giraffe with distance/minimizer indexes + DeepVariant 1.6) via legacy tool definitions.
+- **Benchmark input JSONs**:
+  - `benchmark-giab.HG002.standard.json`
+  - `benchmark-giab.HG002.pangenome_aware.json`
+  - `benchmark-giab.HG003.standard.json`
+  - `benchmark-giab.HG003.pangenome_aware.json`
+  - `benchmark-giab-legacy.HG003.json`
+- **`benchmark/collect.py`**: Evaluation summary collector parsing hap.py `summary.csv` (`SNP` and `INDEL` PASS metrics: recall, precision, F1) into markdown tables with Yang et al. published baseline references.
+- **`benchmark/stage_giab_inputs.sh` and `benchmark/README.md`**: Automated, idempotent staging script on `ws` downloading HG002 30x NovaSeq FASTQs, GIAB v4.2.1/v5.0q truth sets, and v3.5 stratifications, verifying downloads against server `Content-Length`. Corrected path structures for v5.0q (`/v5.0q/` directly) and stratifications (`/GRCh38@all/Union/`).
+- **Unit and regression tests**:
+  - `tests/test_benchmark_inputs.py`: Verifies that all required workflow inputs are provided across all 5 benchmark JSONs.
+  - `tests/test_collect.py`: Unit test with fixture `tests/fixtures/happy/summary.csv` testing 4-decimal formatting and Yang baseline reporting.
+
 ## [Unreleased] — Candidate re-ranking: repeat expansions and recessive genotypes
 
 Closes the two misses from the 18 Oct 2026 reruns, where the summary named a
