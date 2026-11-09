@@ -114,12 +114,22 @@ SAMPLER_PID=$!
 
 echo "[$(date -Is)] Starting cwltool (HOST=$HOST): workflow=$WORKFLOW inputs=$INPUTS_JSON outdir=$OUTDIR"
 "$PYTHON" -c '
-import os, sys, cwltool.job, cwltool.main, cwltool.pathmapper
+import os, sys, cwltool.job, cwltool.main, cwltool.pathmapper, cwltool.process
 _orig_init = cwltool.job.JobBase.__init__
 def _init_with_net(self, *args, **kwargs):
     _orig_init(self, *args, **kwargs)
     self.networkaccess = True
 cwltool.job.JobBase.__init__ = _init_with_net
+
+_orig_eval_res = cwltool.process.Process.evalResources
+def _eval_res_scaled(self, builder, runtimeContext):
+    res = _orig_eval_res(self, builder, runtimeContext)
+    if res.get("cores", 1) >= 8:
+        target = int(os.environ.get("NELLY_STEP_CORES", os.environ.get("SLURM_CPUS_PER_TASK", "32")))
+        if target > res["cores"]:
+            res["cores"] = target
+    return res
+cwltool.process.Process.evalResources = _eval_res_scaled
 
 _orig_visit = cwltool.pathmapper.PathMapper.visit
 def _visit_with_fasta_sec(self, obj, stagedir, basedir, copy=False, staged=False):
