@@ -95,7 +95,17 @@
   },
   "vep_fasta_file": {
     "class": "File",
-    "path": "/data/nelly-local/inputs/vep_fasta/fastafile"
+    "path": "/data/nelly-local/inputs/vep_fasta/fastafile",
+    "secondaryFiles": [
+      {
+        "class": "File",
+        "path": "/data/nelly-local/inputs/vep_fasta/fastafile.fai"
+      },
+      {
+        "class": "File",
+        "path": "/data/nelly-local/inputs/vep_fasta/fastafile.gzi"
+      }
+    ]
   },
   "exomiser_data": {
     "class": "Directory",

@@ -80,6 +80,9 @@ inputs:
     type: Directory
   vep_fasta_file:
     type: File
+    secondaryFiles:
+      - .fai
+      - .gzi
   exomiser_data:
     type: Directory
   exomiser_assembly:

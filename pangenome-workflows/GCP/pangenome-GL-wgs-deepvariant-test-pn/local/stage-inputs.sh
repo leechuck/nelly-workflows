@@ -74,6 +74,7 @@ if [ "$MODE" != "--verify-only" ]; then
   for f in fastafile fastafile.fai fastafile.gzi; do
     fetch_keep_file "00528ccfa8b07fd08907077b1f4fe3e9+927" "$f" "$ROOT/vep_fasta/$f"
   done
+  touch "$ROOT/vep_fasta/fastafile.fai" "$ROOT/vep_fasta/fastafile.gzi"
 
   for f in clinvar.vcf.gz clinvar.vcf.gz.md5 clinvar.vcf.gz.tbi gnomad.v4.1.constraint_metrics.tsv variant_summary.txt.gz; do
     fetch_keep_file "28a24f20fb9659e2ba4e4b9a17f7bec0+778" "$f" "$ROOT/acmg/$f"
