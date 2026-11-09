@@ -35,3 +35,5 @@
 1034	SNV	gene-missing	3073		HGNC:4774	Pathogenic	1	Dec 17, 2024	.	-	RCV1	MedGen:test	test-disease	germline	germline	GRCh38	NC_000015.10	15	72346234	72346234	C	G	15q25.1	criteria provided, multiple submitters, no conflicts	2	-	N	-	3	1034	72346234	C	G	-	-	-	-	-	-
 1999	SNV	NM_000009.9(HEXA):c.300C>T (p.Ala100Val)	3073	HEXA	HGNC:4774	risk factor	1	Dec 17, 2024	.	-	RCV1	MedGen:test	test-disease	germline	germline	GRCh38	NC_000015.10	15	72346234	72346234	C	G	15q25.1	criteria provided, multiple submitters, no conflicts	2	-	N	-	3	1999	72346234	C	G	-	-	-	-	-	-
 2000	SNV	NM_000009.9(HEXA):c.301C>T	3073	HEXA	HGNC:4774	Conflicting classifications of pathogenicity	1	Dec 17, 2024	.	-	RCV1	MedGen:test	test-disease	germline	germline	GRCh38	NC_000015.10	15	72346234	72346234	C	G	15q25.1	criteria provided, multiple submitters, no conflicts	2	-	N	-	3	2000	72346234	C	G	-	-	-	-	-	-
+
+1002	SNV	NM_000518.3(HEXA):c.50C>T (p.Ala17Val)	3073	HEXA	HGNC:4774	Pathogenic	1	Dec 17, 2024	.	-	RCV1	MedGen:other	other-disease	germline	germline	GRCh38	NC_000015.10	15	72346234	72346234	C	G	15q25.1	criteria provided, multiple submitters, no conflicts	2	-	N	-	3	1002	72346234	C	G	-	-	-	-	-	-

@@ -96,19 +96,33 @@ def classify_hgvs(name: str) -> str | None:
 
 
 def read_gene_table_rows(summary_path: Path | str, assembly: str = "GRCh38") -> dict[str, dict]:
-    """Aggregate per-gene missense/LoF P/LP and B/LB allele counts."""
-    counts: dict[tuple[str, str, str], int] = {}
+    """Per-gene missense/LoF P/LP and B/LB allele counts (one per allele).
+
+    variant_summary.txt lists one row per allele * and condition*, so counting
+    rows inflates counts by up to ~20x for alleles shared across many
+    conditions. Alleles are therefore deduplicated by AlleleID (fallback:
+    PositionVCF/REF/ALT) with the most severe aggregated interpretation
+    winning (P/LP before B/LB, per ClinVar's rule); within an allele the
+    class of the most severe row is used and the gene list (multi-gene
+    symbols exist) is merged.
+    """
+    # allele -> {"sig": "PLP"|"BLB", "cls": class of that severity's first row}
+    by_allele: dict[str, dict] = {}
     opener = gzip.open if str(summary_path).endswith(".gz") else open
     with opener(summary_path, "rt", newline="") as f:  # type: ignore[operator]
         reader = csv.DictReader((line for line in f if not line.startswith("##")), delimiter="\t")
         header = reader.fieldnames or []
         header_map = {h.lstrip("#"): h for h in header}
         assembly_col = header_map.get("Assembly")
+        id_col = header_map.get("AlleleID")
+        pos_col = header_map.get("PositionVCF")
+        ref_col = header_map.get("ReferenceAlleleVCF")
+        alt_col = header_map.get("AlternateAlleleVCF")
         for row in reader:
-            sym = _col(row, "GeneSymbol")
-            if not sym:
-                continue
             if assembly and assembly_col and _col(row, "Assembly") != assembly:
+                continue
+            sym_raw = _col(row, "GeneSymbol")
+            if not sym_raw:
                 continue
             sig = classify_significance(_col(row, "ClinicalSignificance"))
             if sig is None:
@@ -116,23 +130,48 @@ def read_gene_table_rows(summary_path: Path | str, assembly: str = "GRCh38") -> 
             cls = classify_hgvs(_col(row, "Name"))
             if cls is None:
                 continue
-            key = (sym, sig, cls)
-            counts.setdefault(key, 0)
-            counts[key] += 1
+            # prefer the file's per-allele id; the real variant_summary rows are
+            # keyed by AlleleID; _col() would miss the '#AlleleID' key
+            allele_id = (row.get(id_col) or "").strip() if id_col else ""
+            if not allele_id:
+                # no AlleleID column: fall back to VCF allele identity
+                identity = (
+                    _col(row, "Chromosome"),
+                    (row.get(pos_col) or "").strip() if pos_col else "",
+                    (row.get(ref_col) or "").strip() if ref_col else "",
+                    (row.get(alt_col) or "").strip() if alt_col else "",
+                )
+                allele_id = "|".join(part for part in identity if part) or \
+                    f"{_col(row, 'Chromosome')}:{_col(row, 'Start')}"
+            entry = by_allele.setdefault(allele_id, {"sig": None, "cls": None, "genes": set()})
+            if sig == "PLP" and entry["sig"] != "PLP":
+                # most severe aggregation: a P/LP row overrides benign rows,
+                # including resetting any benign class seen first
+                entry["sig"] = "PLP"
+                entry["cls"] = cls
+            elif entry["sig"] is None:
+                entry["sig"] = "BLB"
+                entry["cls"] = cls
+            elif entry["sig"] == "BLB" and entry["cls"] is None:
+                entry["cls"] = cls
+            entry["genes"].update(g.strip() for g in sym_raw.replace(";", ",").split(",") if g.strip())
     genes: dict[str, dict[str, int]] = {}
-    for (sym, sig, cls), n in counts.items():
-        gene = genes.setdefault(sym, {
-            "clinvar_missense_plp": 0,
-            "clinvar_missense_blb": 0,
-            "clinvar_lof_plp": 0,
-        })
-        if sig == "PLP":
-            if cls == "MISSENSE":
-                gene["clinvar_missense_plp"] = n
-            elif cls == "LOF":
-                gene["clinvar_lof_plp"] = n
-        elif sig == "BLB" and cls == "MISSENSE":
-            gene["clinvar_missense_blb"] = n
+    for entry in by_allele.values():
+        cls = entry["cls"]
+        sig = entry["sig"]
+        for sym in sorted(entry["genes"]):
+            gene = genes.setdefault(sym, {
+                "clinvar_missense_plp": 0,
+                "clinvar_missense_blb": 0,
+                "clinvar_lof_plp": 0,
+            })
+            if sig == "PLP":
+                if cls == "MISSENSE":
+                    gene["clinvar_missense_plp"] += 1
+                elif cls == "LOF":
+                    gene["clinvar_lof_plp"] += 1
+            elif sig == "BLB" and cls == "MISSENSE":
+                gene["clinvar_missense_blb"] += 1
     return genes
 
 
