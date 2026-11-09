@@ -5,8 +5,8 @@ requirements:
   MultipleInputFeatureRequirement: {}
 
 inputs:
-  fastq1: File
-  fastq2: File
+  reads1: File
+  reads2: File
   graph: File
   hapl: File
   ref_prefix:
@@ -16,10 +16,10 @@ inputs:
     type: File
     secondaryFiles:
       - .fai
-  sample:
+  sample_name:
     type: string
     default: sample
-  eh_catalog: File?
+  eh_variant_catalog: File?
   eh_sex:
     type: string
     default: female
@@ -85,9 +85,9 @@ steps:
   kmc:
     run: kmc.cwl
     in:
-      reads1: fastq1
-      reads2: fastq2
-      sample_name: sample
+      reads1: reads1
+      reads2: reads2
+      sample_name: sample_name
     out: [kff]
 
   vg-giraffe-bam:
@@ -97,9 +97,9 @@ steps:
       hapl: hapl
       kff: kmc/kff
       ref_paths: vg-paths/path_list
-      reads1: fastq1
-      reads2: fastq2
-      sample_name: sample
+      reads1: reads1
+      reads2: reads2
+      sample_name: sample_name
       bam_output: aligned_bam_output
     out: [aligned_reads]
 
@@ -109,7 +109,7 @@ steps:
       aligned_reads: vg-giraffe-bam/aligned_reads
       ref: ref
       ref_prefix: ref_prefix
-      sample_name: sample
+      sample_name: sample_name
     out: [aligned_reads_sorted]
 
   samtools-index-sorted:
@@ -162,7 +162,7 @@ steps:
     in:
       aligned_reads: samtools-markdup-index/aligned_reads_indexed
       ref: ref
-      variant_catalog: eh_catalog
+      variant_catalog: eh_variant_catalog
       sex: eh_sex
       output_prefix: eh_output_prefix
     out: [vcf, json, realigned_bam]

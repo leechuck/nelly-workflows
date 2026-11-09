@@ -1,5 +1,8 @@
 cwlVersion: v1.2
 class: Workflow
+requirements:
+  SubworkflowFeatureRequirement: {}
+  MultipleInputFeatureRequirement: {}
 
 doc: "GIAB benchmark workflow comparing align-and-call variant predictions against GIAB truth using hap.py"
 

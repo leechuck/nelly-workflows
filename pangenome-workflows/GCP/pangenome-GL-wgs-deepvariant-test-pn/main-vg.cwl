@@ -161,14 +161,14 @@ steps:
   align-and-call:
     run: align-and-call.cwl
     in:
-      fastq1: reads1
-      fastq2: reads2
+      reads1: reads1
+      reads2: reads2
       graph: graph
       hapl: hapl
       ref_prefix: ref_prefix
       ref: ref
-      sample: sample_name
-      eh_catalog: eh_variant_catalog
+      sample_name: sample_name
+      eh_variant_catalog: eh_variant_catalog
       eh_sex: phenofrommetadata/expansionhunter_sex
       dv_mode: dv_mode
       aligned_bam_output: aligned_bam_output
