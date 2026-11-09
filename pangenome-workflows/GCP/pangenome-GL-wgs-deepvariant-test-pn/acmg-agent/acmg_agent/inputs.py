@@ -91,6 +91,8 @@ class VepAnnotation:
     revel: float | None
     spliceai: float | None
     gt: str | None = None
+    alphamissense: float | None = None
+    protein_length: int | None = None
 
 
 def _select_consequence(raw_csq: str) -> str:
@@ -172,6 +174,9 @@ class VepIndex:
                     mane = bool(entry.get("MANE_SELECT", "").strip())
                     canon = entry.get("CANONICAL", "").strip().upper() == "YES"
                     repeat_flag = bool(entry.get("Repeat", "").strip()) if "Repeat" in entry else False
+                    raw_prot = (entry.get("Protein_position") or "").strip()
+                    prot_len = parse_int(raw_prot.split("/", 1)[1]) if "/" in raw_prot else None
+                    am_score = parse_float(entry.get("am_pathogenicity") or entry.get("AlphaMissense"))
                     annot = VepAnnotation(
                         gene=entry.get("SYMBOL", "").strip(),
                         transcript=entry.get("Feature", "").strip() or None,
@@ -183,7 +188,7 @@ class VepIndex:
                         exon=exon,
                         intron=intron,
                         cds_position=parse_int(entry.get("CDS_position")),
-                        protein_position=parse_int(entry.get("Protein_position")),
+                        protein_position=parse_int(raw_prot),
                         nmd_escape=_compute_nmd_escape(consequence, exon),
                         in_repeat_region=repeat_flag,
                         max_af=parse_float(entry.get("MAX_AF")),
@@ -192,6 +197,8 @@ class VepIndex:
                         revel=parse_float(entry.get("REVEL")),
                         spliceai=_extract_spliceai(entry),
                         gt=gt_str,
+                        alphamissense=am_score,
+                        protein_length=prot_len,
                     )
                     parsed_annots.append(annot)
 

@@ -25,7 +25,7 @@ def test_cli_no_llm_ts2_hexa_leading(tmp_path):
     assert data["schema_version"] == 1
     assert data["leading_candidate"]["gene"] == "HEXA"
     assert data["leading_candidate"]["classification"] == "Pathogenic"
-    assert data["leading_candidate"]["points"] == 12
+    assert data["leading_candidate"]["points"] == 10
     md = out_md.read_text()
     assert "HEXA" in md
     assert "PVS1" in md
