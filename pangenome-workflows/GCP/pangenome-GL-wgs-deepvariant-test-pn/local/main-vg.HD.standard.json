@@ -1,0 +1,131 @@
+{
+  "ref_prefix": "GRCh38",
+  "sample_name": "sample",
+  "graph": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/graph/ksa_hg38.gbz"
+  },
+  "hapl": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/graph/ksa_hg38.hapl"
+  },
+  "ref": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/graph/hg38.fa",
+    "secondaryFiles": [
+      {
+        "class": "File",
+        "path": "/data/nelly-local/inputs/graph/hg38.fa.fai"
+      }
+    ]
+  },
+  "reads1": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/patients/hd/reads1.fastq.gz"
+  },
+  "reads2": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/patients/hd/reads2.fastq.gz"
+  },
+  "dv_mode": "standard",
+  "aligned_bam_output": "aligned.bam",
+  "dv_model_type": "WGS",
+  "dv_output_vcf": "variants.dv.vcf.gz",
+  "dv_output_gvcf": "variants.dv.gvcf.gz",
+  "eh_output_prefix": "eh_repeats",
+  "combined_vcf_name": "combined.vcf.gz",
+  "normalized_vcf_name": "normalized.vcf.gz",
+  "metadata": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/patients/hd/metadata.yaml"
+  },
+  "slivar_gnomad": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/slivar_vep_custom/gnomad.hg38.genomes.v3.fix.zip"
+  },
+  "vep_assembly": "GRCh38",
+  "vep_output_file": "vep-output.vcf.gz",
+  "pavs_custom_file": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/slivar_vep_custom/sorted.pavs.plugin.38.vcf.gz",
+    "secondaryFiles": [
+      {
+        "class": "File",
+        "path": "/data/nelly-local/inputs/slivar_vep_custom/sorted.pavs.plugin.38.vcf.gz.tbi"
+      }
+    ]
+  },
+  "pavs_custom_args": "PAVS,vcf,exact",
+  "go_custom_file": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/slivar_vep_custom/sorted.plugin.go.bed.gz",
+    "secondaryFiles": [
+      {
+        "class": "File",
+        "path": "/data/nelly-local/inputs/slivar_vep_custom/sorted.plugin.go.bed.gz.tbi"
+      }
+    ]
+  },
+  "go_custom_args": "GO_CLASSES,bed,overlap",
+  "hpo_custom_file": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/slivar_vep_custom/sorted.plugin.pheno.bed.gz",
+    "secondaryFiles": [
+      {
+        "class": "File",
+        "path": "/data/nelly-local/inputs/slivar_vep_custom/sorted.plugin.pheno.bed.gz.tbi"
+      }
+    ]
+  },
+  "hpo_custom_args": "PHENOTYPE,bed,overlap",
+  "ppi_custom_file": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/slivar_vep_custom/sorted.plugin.ppi.bed.gz",
+    "secondaryFiles": [
+      {
+        "class": "File",
+        "path": "/data/nelly-local/inputs/slivar_vep_custom/sorted.plugin.ppi.bed.gz.tbi"
+      }
+    ]
+  },
+  "ppi_custom_args": "PPI,bed,overlap",
+  "vep_dir": {
+    "class": "Directory",
+    "path": "/data/nelly-local/inputs/vep_cache"
+  },
+  "vep_fasta_file": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/vep_fasta/fastafile"
+  },
+  "exomiser_data": {
+    "class": "Directory",
+    "path": "/data/nelly-local/inputs/exomiser"
+  },
+  "exomiser_assembly": "hg38",
+  "exomiser_data_version": "2512",
+  "hpo_terms": "HP:0002072,HP:0000726,HP:0002311",
+  "exomiser_top_genes": 10,
+  "acmg_clinvar_vcf": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/acmg/clinvar.vcf.gz",
+    "secondaryFiles": [
+      {
+        "class": "File",
+        "path": "/data/nelly-local/inputs/acmg/clinvar.vcf.gz.tbi"
+      }
+    ]
+  },
+  "acmg_gene_table": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/acmg/gene_table.tsv"
+  },
+  "acmg_strchive_json": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/acmg/STRchive-loci.json"
+  },
+  "acmg_top_candidates": 10,
+  "llm_backend": "openai",
+  "llm_endpoint": "http://unimatrix01.kaust.edu.sa:8000/v1",
+  "llm_model": "qwen3.8-27b",
+  "llm_api_key": "FROM-ENV"
+}
