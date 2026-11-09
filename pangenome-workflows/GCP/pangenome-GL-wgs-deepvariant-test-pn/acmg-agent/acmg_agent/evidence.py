@@ -152,11 +152,13 @@ def build_evidence(
     intron = vep_hit.intron if vep_hit else None
     cds_position = vep_hit.cds_position if vep_hit else None
     protein_position = vep_hit.protein_position if vep_hit else None
+    protein_length = vep_hit.protein_length if vep_hit else None
     nmd_escape = bool(vep_hit.nmd_escape) if vep_hit else False
     in_repeat_region = bool(vep_hit.in_repeat_region) if vep_hit else False
 
     revel = vep_hit.revel if vep_hit else None
     spliceai = vep_hit.spliceai if vep_hit else None
+    alphamissense = vep_hit.alphamissense if vep_hit else None
 
     # Population frequency: Exomiser MAX_FREQ is a percentage (0..100), converted once via parse_exomiser_freq
     exomiser_af = parse_exomiser_freq(candidate.get("max_freq"))
@@ -254,4 +256,6 @@ def build_evidence(
         pheno_evidence=str(candidate.get("pheno_evidence") or ""),
         disease=str(candidate.get("disease") or ""),
         clinvar_lof_plp=clinvar_lof_plp,
+        alphamissense=alphamissense,
+        protein_length=protein_length,
     )

@@ -38,12 +38,41 @@ def test_pvs1_downgraded_on_nmd_escape():
     assert (c.status, c.strength) == ("met", "strong")
 
 
+def test_pvs1_last_exon_lt_10pct_is_moderate():
+    c = eval_pvs1(make_ev(
+        consequence="stop_gained",
+        lof_mechanism=True,
+        exon="12/12",
+        protein_position=480,
+        protein_length=500,
+        nmd_escape=True,
+    ))
+    assert (c.status, c.strength) == ("met", "moderate")
+    c2 = eval_pvs1(make_ev(
+        consequence="stop_gained",
+        lof_mechanism=True,
+        exon="4/4",
+        protein_position=100,
+        protein_length=200,
+        nmd_escape=True,
+    ))
+    assert (c2.status, c2.strength) == ("met", "strong")
+
+
 def test_pvs1_not_met_on_missense():
     assert eval_pvs1(make_ev(consequence="missense_variant")).status == "not_met"
 
 
-def test_pvs1_not_evaluable_when_mechanism_unknown():
-    assert eval_pvs1(make_ev(consequence="stop_gained", lof_mechanism=None)).status == "not_evaluable"
+def test_pvs1_not_evaluable_when_mechanism_and_loeuf_unknown():
+    assert eval_pvs1(make_ev(consequence="stop_gained", lof_mechanism=None, loeuf=None)).status == "not_evaluable"
+
+
+def test_pvs1_loeuf_fallback_when_mechanism_unknown():
+    c = eval_pvs1(make_ev(consequence="stop_gained", lof_mechanism=None, loeuf=0.20, nmd_escape=False))
+    assert (c.status, c.strength) == ("met", "very_strong")
+    assert "LOEUF" in c.rationale
+    c_high = eval_pvs1(make_ev(consequence="stop_gained", lof_mechanism=None, loeuf=0.60, nmd_escape=False))
+    assert c_high.status == "not_met"
 
 
 def test_ps1_met_when_same_aa_2star():
@@ -72,15 +101,21 @@ def test_pm2_not_met_common_in_ad():
     assert eval_pm2(make_ev(moi="AD", max_af=5e-5)).status == "not_met"
 
 
-def test_pm3_hom_in_ar_is_moderate():
+def test_pm3_hom_in_ar_is_supporting():
     c = eval_pm3(make_ev(moi="AR", zygosity="hom", max_af=1e-5))
-    assert (c.status, c.strength) == ("met", "moderate")
-
-
-def test_pm3_unphased_second_plp_is_supporting():
-    other = [{"clinvar_sig": "Pathogenic", "gt": "0/1"}]
-    c = eval_pm3(make_ev(moi="AR", zygosity="het", other_var_in_gene=other))
     assert (c.status, c.strength) == ("met", "supporting")
+    assert "0.5 pts" in c.rationale
+
+
+def test_pm3_point_table_variants():
+    c_trans_p = eval_pm3(make_ev(moi="AR", zygosity="het", other_var_in_gene=[{"clinvar_sig": "Pathogenic", "phased_in_trans": True}]))
+    assert (c_trans_p.status, c_trans_p.strength) == ("met", "moderate")
+    c_unph_p = eval_pm3(make_ev(moi="AR", zygosity="het", other_var_in_gene=[{"clinvar_sig": "Pathogenic", "gt": "0/1"}]))
+    assert (c_unph_p.status, c_unph_p.strength) == ("met", "supporting")
+    c_trans_lp = eval_pm3(make_ev(moi="AR", zygosity="het", other_var_in_gene=[{"clinvar_sig": "Likely_pathogenic", "phased_in_trans": True}]))
+    assert (c_trans_lp.status, c_trans_lp.strength) == ("met", "supporting")
+    c_unph_lp = eval_pm3(make_ev(moi="AR", zygosity="het", other_var_in_gene=[{"clinvar_sig": "Likely_pathogenic", "gt": "0/1"}]))
+    assert c_unph_lp.status == "not_met"
 
 
 def test_pm3_not_applicable_in_ad():
@@ -101,20 +136,37 @@ def test_pp2_met_when_missense_enriched():
     assert eval_pp2(make_ev(clinvar_missense_plp=5, clinvar_missense_blb=10)).status == "not_met"
 
 
-def test_pp3_revel_high():
-    assert eval_pp3(make_ev(revel=0.85)).status == "met"
+def test_pp3_graded_revel_and_alphamissense_and_spliceai():
+    assert eval_pp3(make_ev(revel=0.95, spliceai=0.05)).strength == "strong"
+    assert eval_pp3(make_ev(revel=0.80, spliceai=0.05)).strength == "moderate"
+    assert eval_pp3(make_ev(revel=0.68, spliceai=0.05)).strength == "supporting"
+    assert eval_pp3(make_ev(revel=0.50, spliceai=0.05)).status == "not_met"
+    # SpliceAI >= 0.2 -> supporting
+    c_sp = eval_pp3(make_ev(revel=None, spliceai=0.25))
+    assert (c_sp.status, c_sp.strength) == ("met", "supporting")
+    # AlphaMissense fallback when REVEL is None
+    c_am = eval_pp3(make_ev(revel=None, alphamissense=0.65, spliceai=0.01))
+    assert (c_am.status, c_am.strength) == ("met", "supporting")
+    # Stronger of REVEL and SpliceAI wins without stacking
+    c_both = eval_pp3(make_ev(revel=0.95, spliceai=0.80))
+    assert (c_both.status, c_both.strength) == ("met", "strong")
 
 
-def test_pp3_spliceai_high():
-    assert eval_pp3(make_ev(revel=None, spliceai=0.75)).status == "met"
-
-
-def test_bp4_both_low():
-    assert eval_bp4(make_ev(revel=0.05, spliceai=0.02)).status == "met"
+def test_bp4_graded_revel_and_alphamissense_and_spliceai():
+    assert eval_bp4(make_ev(revel=0.002, spliceai=0.02)).strength == "strong"
+    assert eval_bp4(make_ev(revel=0.010, spliceai=0.02)).strength == "moderate"
+    assert eval_bp4(make_ev(revel=0.150, spliceai=0.02)).strength == "supporting"
+    assert eval_bp4(make_ev(revel=0.250, spliceai=0.02)).status == "not_met"
+    # AlphaMissense fallback when REVEL is None
+    c_am = eval_bp4(make_ev(revel=None, alphamissense=0.20, spliceai=0.02))
+    assert (c_am.status, c_am.strength) == ("met", "supporting")
+    # High SpliceAI blocks BP4 even when REVEL is low
+    assert eval_bp4(make_ev(revel=0.002, spliceai=0.50)).status == "not_met"
 
 
 def test_pp4_met_with_specific_phenotype():
     assert eval_pp4(make_ev(human_pheno_score=0.65, disease="Tay-Sachs (OMIM:272800)")).status == "met"
+    assert eval_pp4(make_ev(human_pheno_score=0.55, disease="Tay-Sachs (OMIM:272800)", pheno_evidence="OMIM:272800")).status == "not_met"
     assert eval_pp4(make_ev(human_pheno_score=0.3, disease="Tay-Sachs")).status == "not_met"
 
 
@@ -184,7 +236,7 @@ def test_hexa_criteria():
     by_code = {c.code: c for c in evaluate_all(ev)}
     assert by_code["PVS1"].status == "met" and by_code["PVS1"].strength == "very_strong"
     assert by_code["PM2"].status == "met" and by_code["PM2"].strength == "supporting"
-    assert by_code["PM3"].status == "met" and by_code["PM3"].strength == "moderate"
+    assert by_code["PM3"].status == "met" and by_code["PM3"].strength == "supporting"
     assert by_code["PP4"].status == "met" and by_code["PP4"].strength == "supporting"
     assert by_code["PP5"].status == "not_applicable"
     assert by_code["BP6"].status == "not_applicable"

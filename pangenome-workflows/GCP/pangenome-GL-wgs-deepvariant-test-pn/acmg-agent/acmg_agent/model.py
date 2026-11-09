@@ -3,9 +3,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+CRITERION_STATUSES = ("met", "not_met", "not_evaluable", "not_applicable")
+
 
 @dataclass
 class Evidence:
+    """Normalized variant-, gene-, population-, and case-level evidence pack."""
+
     gene: str
     moi: str                      # "AD" | "AR" | "XL" | "XR" | "XD" | "MT" | "OTHER"
     chrom: str
@@ -52,10 +56,22 @@ class Evidence:
     pheno_evidence: str = ""
     disease: str = ""
     clinvar_lof_plp: int | None = None
+    alphamissense: float | None = None
+    protein_length: int | None = None
 
 
 @dataclass
 class Criterion:
+    """Single ACMG/AMP criterion outcome.
+
+    Attributes:
+        code: Criterion identifier ("PVS1" .. "BP7").
+        status: One of ("met", "not_met", "not_evaluable", "not_applicable").
+            "not_applicable" is used for retired criteria (PP5, BP6) and contributes 0 points.
+        strength: One of ("stand_alone", "very_strong", "strong", "moderate", "supporting") or None.
+        rationale: Human-readable explanation grounded in Evidence fields.
+    """
+
     code: str                     # "PVS1" .. "BP7"
     status: str                   # "met" | "not_met" | "not_evaluable" | "not_applicable"
     strength: str | None          # "stand_alone" | "very_strong" | "strong" | "moderate" | "supporting" | None
@@ -64,6 +80,8 @@ class Criterion:
 
 @dataclass
 class Classification:
+    """Combined 5-tier ACMG classification from points (primary) and Richards 2015 rules."""
+
     class_: str                   # "Pathogenic" | "Likely pathogenic" | "VUS" | "Likely benign" | "Benign"
     points: int
     rule_based_class: str

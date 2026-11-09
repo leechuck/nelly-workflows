@@ -23,6 +23,7 @@ from acmg_agent.inputs import (
     norm_chrom,
     read_slivar_info,
 )
+from acmg_agent.repeats import load_strchive
 from acmg_agent.report import (
     build_deterministic_narrative,
     serialize_candidate_assessment,
@@ -178,10 +179,19 @@ def cmd_assess(args: argparse.Namespace) -> int:
             except Exception as exc:
                 errors.append(f"Failed to read slivar VCF ({args.slivar_vcf}): {exc}")
 
+        strchive_loci = None
+        strchive_used = False
+        if getattr(args, "strchive_json", None):
+            try:
+                strchive_loci = load_strchive(args.strchive_json)
+                strchive_used = True
+            except Exception as exc:
+                errors.append(f"Failed to load STRchive JSON ({args.strchive_json}): {exc}")
+
         expansions: list[dict] = []
         if args.eh_json:
             try:
-                expansions = read_eh_expansions(args.eh_json)
+                expansions = read_eh_expansions(args.eh_json, strchive_loci=strchive_loci)
             except Exception as exc:
                 errors.append(f"Failed to read ExpansionHunter JSON ({args.eh_json}): {exc}")
 
@@ -330,6 +340,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
         data = {
             "schema_version": 1,
             "sample": args.sample,
+            "strchive_used": strchive_used,
             "llm": llm_info,
             "leading_candidate": leading_dict,
             "near_tie_alternatives": near_ties_list,
@@ -372,6 +383,7 @@ def build_parser() -> argparse.ArgumentParser:
     ass.add_argument("--genes-tsv", default=None)
     ass.add_argument("--variants-tsv", default=None)
     ass.add_argument("--eh-json", default=None)
+    ass.add_argument("--strchive-json", default=None)
     ass.add_argument("--vep-vcf", required=True)
     ass.add_argument("--clinvar-vcf", required=True)
     ass.add_argument("--gene-table", required=True)

@@ -42,7 +42,7 @@ def test_ts_end_to_end(tmp_path):
     assert lead["kind"] == "snv"
     assert lead["gene"] == "HEXA"
     assert lead["classification"] == "Pathogenic"
-    assert lead["points"] == 12
+    assert lead["points"] == 11
     assert "HEXA" in md
 
 
@@ -53,7 +53,7 @@ def test_ts2_end_to_end(tmp_path):
     assert lead["kind"] == "snv"
     assert lead["gene"] == "HEXA"
     assert lead["classification"] == "Pathogenic"
-    assert lead["points"] == 12
+    assert lead["points"] == 10
     assert lead["rule_based_class"] == "Pathogenic"
     assert lead["conflict"] is False
     hexa_entry = next(c for c in data["candidates"] if c["gene"] == "HEXA")
@@ -61,8 +61,8 @@ def test_ts2_end_to_end(tmp_path):
     by_code = {c["code"]: c for c in hexa_entry["criteria"]}
     assert by_code["PVS1"]["status"] == "met" and by_code["PVS1"]["strength"] == "very_strong"
     assert by_code["PM2"]["status"] == "met" and by_code["PM2"]["strength"] == "supporting"
-    assert by_code["PM3"]["status"] == "met" and by_code["PM3"]["strength"] == "moderate"
-    assert by_code["PP4"]["status"] == "met" and by_code["PP4"]["strength"] == "supporting"
+    assert by_code["PM3"]["status"] == "met" and by_code["PM3"]["strength"] == "supporting"
+    assert by_code["PP4"]["status"] == "not_met"
     assert by_code["PP5"]["status"] == "not_applicable"
     assert by_code["BP6"]["status"] == "not_applicable"
     assert "PVS1" in md and "PM3" in md
