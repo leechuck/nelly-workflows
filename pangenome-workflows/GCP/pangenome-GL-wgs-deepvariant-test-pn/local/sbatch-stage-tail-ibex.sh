@@ -168,8 +168,9 @@ ACMG_PDH="28a24f20fb9659e2ba4e4b9a17f7bec0+778"
 for f in clinvar.vcf.gz clinvar.vcf.gz.tbi gnomad.v4.1.constraint_metrics.tsv variant_summary.txt.gz; do
   stage_keep_file "$ACMG_PDH/$f" "$INPUTS/acmg/$f"
 done
-cp -f "$WORK_ROOT/workflow/acmg-agent/tests/fixtures/acmg/gene_table.tsv" "$INPUTS/acmg/gene_table.tsv"
-cp -f "$WORK_ROOT/workflow/acmg-agent/tests/fixtures/acmg/strchive-loci.subset.json" "$INPUTS/acmg/STRchive-loci.json"
+for f in gene_table.tsv STRchive-loci.json; do
+  stage_keep_file "95d0b6027bd22592ac4ebde6412c0d63+100/$f" "$INPUTS/acmg/$f"
+done
 
 EXISTING_EXOMISER="/encrypted/e3008/Rob/yang-pangenome-full-cohort-20261012/tools/exomiser/data"
 if [ -d "$EXISTING_EXOMISER/2512_hg38" ] && [ ! -d "$INPUTS/exomiser/data/2512_hg38" ]; then

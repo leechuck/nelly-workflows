@@ -79,11 +79,9 @@ if [ "$MODE" != "--verify-only" ]; then
   for f in clinvar.vcf.gz clinvar.vcf.gz.md5 clinvar.vcf.gz.tbi gnomad.v4.1.constraint_metrics.tsv variant_summary.txt.gz; do
     fetch_keep_file "28a24f20fb9659e2ba4e4b9a17f7bec0+778" "$f" "$ROOT/acmg/$f"
   done
-
-  if [ ! -s "$ROOT/acmg/STRchive-loci.json" ]; then
-    curl -fsSL -o "$ROOT/acmg/STRchive-loci.json" \
-      https://raw.githubusercontent.com/dashnowlab/STRchive/main/data/STRchive-loci.json
-  fi
+  for f in gene_table.tsv STRchive-loci.json; do
+    fetch_keep_file "95d0b6027bd22592ac4ebde6412c0d63+100" "$f" "$ROOT/acmg/$f"
+  done
 
   if [ ! -d "$ROOT/exomiser/data/2512_hg38" ]; then
     echo "[$(date -Is)] Staging Exomiser 2512 bundle (00cbcbd45419c2f051889639deff3431+39145)..."

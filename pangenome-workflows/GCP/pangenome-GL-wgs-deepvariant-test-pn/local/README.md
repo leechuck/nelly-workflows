@@ -61,7 +61,8 @@ setsid nohup bash local/stage-inputs.sh --all > /data/nelly-local/logs/stage-inp
 | VEP Ensembl-numeric FASTA | `00528ccfa8b07fd08907077b1f4fe3e9+927` | `fastafile`, `fastafile.fai`, `fastafile.gzi` | `inputs/vep_fasta/` |
 | VEP 116 GRCh38 cache | `8afec8cdb796367144fa2bcec3a3dc59+624229` | `homo_sapiens/116_GRCh38/` | `inputs/vep_cache/` |
 | Exomiser 2512 bundle | `00cbcbd45419c2f051889639deff3431+39145` | `data/2512_hg38/`, `data/2512_phenotype/` | `inputs/exomiser/` |
-| ACMG databases | `28a24f20fb9659e2ba4e4b9a17f7bec0+778` | `clinvar.vcf.gz`(+.tbi), `gnomad.v4.1.constraint_metrics.tsv`, `variant_summary.txt.gz` | `inputs/acmg/` |
+| ACMG databases (ClinVar + gnomAD) | `28a24f20fb9659e2ba4e4b9a17f7bec0+778` | `clinvar.vcf.gz`(+.tbi), `gnomad.v4.1.constraint_metrics.tsv`, `variant_summary.txt.gz` | `inputs/acmg/` |
+| ACMG gene table + STRchive JSON | `95d0b6027bd22592ac4ebde6412c0d63+100` | `gene_table.tsv`, `STRchive-loci.json` | `inputs/acmg/` |
 | Tay-Sachs tail inputs | `b2c8c2b940de5bf4d7881b652e12c24f+18026` | `normalized.vcf.gz`(+.tbi), `eh_repeats.vcf.gz`(+.tbi), `eh_repeats.json` | `inputs/tail/ts/` |
 | Huntington tail inputs | `6d04e84a0ab500c5036ec6713756783b+17943` | `normalized.vcf.gz`(+.tbi), `eh_repeats.vcf.gz`(+.tbi), `eh_repeats.json` | `inputs/tail/hd/` |
 | Tay-Sachs WGS reads + metadata | `5c88241c12f7dc7553ffb3f2ac1ba54b+39418` (`9bb0914061258315847c397cd2eda556+36864`) | `reads1.fastq.gz`, `reads2.fastq.gz`, `metadata.yaml` (coded HPO) | `inputs/patients/ts/` |

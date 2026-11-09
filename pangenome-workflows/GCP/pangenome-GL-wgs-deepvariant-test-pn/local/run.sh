@@ -77,7 +77,7 @@ cleanup() {
 trap cleanup EXIT
 
 "$PYTHON" - "$INPUTS_JSON" "$RUNTIME_JSON" "$WORK_ROOT" <<'PY'
-import json, os, sys
+import json, os, socket, sys
 src, dst, work_root = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(src) as fh:
     raw = fh.read()
@@ -91,6 +91,12 @@ if data.get("llm_api_key") == "FROM-ENV":
             data["llm_api_key"] = kf.read().strip()
     else:
         data["llm_api_key"] = os.environ.get("ACMG_LLM_API_KEY", "")
+ep = data.get("llm_endpoint", "")
+if "unimatrix01.kaust.edu.sa" in ep:
+    try:
+        socket.gethostbyname("unimatrix01.kaust.edu.sa")
+    except OSError:
+        data["llm_endpoint"] = ep.replace("unimatrix01.kaust.edu.sa", "10.72.186.139")
 with open(dst, "w") as out:
     json.dump(data, out, indent=2)
 PY
