@@ -21,11 +21,11 @@
     },
     "reads1": {
         "class": "File",
-        "location": "keep:TODO-GIAB-PDH/HG002.novaseq.pcr-free.30x.R1.fastq.gz"
+        "location": "keep:0c559a512e87c566c3a3de02d056b4a5+33970/HG002.novaseq.pcr-free.30x.R1.fastq.gz"
     },
     "reads2": {
         "class": "File",
-        "location": "keep:TODO-GIAB-PDH/HG002.novaseq.pcr-free.30x.R2.fastq.gz"
+        "location": "keep:0c559a512e87c566c3a3de02d056b4a5+33970/HG002.novaseq.pcr-free.30x.R2.fastq.gz"
     },
     "dv_mode": "pangenome_aware",
     "dv_model_type": "WGS",
@@ -35,17 +35,17 @@
     "eh_sex": "male",
     "truth_vcf": {
         "class": "File",
-        "location": "keep:TODO-GIAB-PDH/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz",
+        "location": "keep:0c559a512e87c566c3a3de02d056b4a5+33970/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz",
         "secondaryFiles": [
             {
                 "class": "File",
-                "location": "keep:TODO-GIAB-PDH/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi"
+                "location": "keep:0c559a512e87c566c3a3de02d056b4a5+33970/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi"
             }
         ]
     },
     "confident_bed": {
         "class": "File",
-        "location": "keep:TODO-GIAB-PDH/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed"
+        "location": "keep:0c559a512e87c566c3a3de02d056b4a5+33970/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed"
     },
     "happy_prefix": "HG002.pangenome_aware.happy"
 }
