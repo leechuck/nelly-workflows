@@ -1,7 +1,26 @@
 # Changelog — pangenome DeepVariant test workflow
 
 All notable changes to the annotation/interpretation tail of this workflow
-(`main-vg.cwl`: VEP → slivar → genome-linter) are documented here.
+(`main-vg.cwl`: VEP → slivar → acmg-agent) are documented here.
+
+## [Unreleased] — ACMG evaluation agent replaces genome-linter (2026-11)
+
+### Added
+- **`acmg-agent/` python package `acmg_agent`** — ACMG/AMP 2015 + ClinGen SVI deterministic engine (WP3:
+  `model/evidence/criteria/classify/report/candidates`, 28 criteria with ClinGen SVI calibrations) plus the WP4 LLM layer:
+  - `agent.py`: bounded tool-calling loop around the deterministic result — tier 0–2 candidates + top-5 overall, ≤ 8 variants, 12 tool calls and 6 min per variant, 50 min global budget (`llm.status = partial` when the budget leaves candidates deterministic). The contract is enforced **in code** (`validate_submission`), not by prompt: codes ⊆ the 28, `not_evaluable`/retired `not_applicable` criteria can never become `met`, strength changes require a reason naming an Evidence field, rationale/reasons must not cite a PMID or a number absent from the evidence pack. Rejected/failed/timed-out LLM assessments fall back to the deterministic criteria.
+  - `tools.py`: read-only evidence-pack tools (`get_variant_evidence`, `get_clinvar_same_variant`, `get_clinvar_same_codon`, `get_population_frequency`, `get_gene_summary`, `get_phenotype_match`, `get_deterministic_criteria`) + one write tool `submit_assessment`; `llm_backends.py`: local GGUF via llama-cpp-python (function calling, `n_ctx` ≥ 8192, `ACMG_THREADS` from `$(runtime.cores)`) or an OpenAI-compatible endpoint, selected by `ACMG_LLM_BACKEND=llama|openai|off` (default llama, `off` = deterministic only).
+  - `scripts/smoke_llm.py`: real-model smoke test of `run_llm_layer` over the TS2 fixtures (offline engine path verified; model run executed in the image on ws).
+- **`acmg-extract-candidates.cwl` + `acmg-agent.cwl`** (image `nelly-acmg-agent:v1`): candidate-set extraction (top-N re-ranked genes → tiny VCF for a second VEP pass, `candidates.vcf`) and the agent step (`coresMin 8`, `ramMin 20480`, phenotype via `ACMG_PHENOTYPE` env, ClinVar `+ .tbi`, gene table, slivar/EH optional). While WP1 is unfinished the `main-vg.cwl` wiring (extract → `vep-candidates` → `acmg-agent`, `output_acmg_json` / `output_acmg_report`, genomelinter removal) is specified in `acmg-agent/WIRING.md` for the supervisor.
+- **`acmg-agent/Dockerfile`** (`nelly-acmg-agent:v1`): `python:3.11-slim`, llama-cpp-python 0.3.2 built from source with `CMAKE_ARGS=-DGGML_NATIVE=OFF` (Debian-safe, gotcha 18), pysam, Qwen2.5-7B-Instruct Q4_K_M GGUF from bartowski via `ARG MODEL_URL` → `/model/model.gguf`, `PYTHONPATH=/app`, **no ENTRYPOINT**, `CMD ["python"]`.
+- **`benchmark/build_gene_table.py`**: builds the gene table the engine reads (`gene loeuf pli moi lof_mechanism clinvar_missense_plp clinvar_missense_blb clinvar_lof_plp hotspot_regions bs1_threshold`) from ClinVar `variant_summary.txt.gz` (per-gene missense/LoF P/LP and B/LB counts from HGVS text, GRCh38-filtered) and gnomAD v4.1 constraint metrics (`loeuf = lof.oe_ci.upper`, `pli = lof.pLI`); `moi` left empty (Exomiser supplies it), `hotspot_regions`/`bs1_threshold` empty (no curated source; engine defaults apply). Fixture-subset test in `tests/test_gene_table.py`.
+- **`benchmark/stage_clinvar.sh`**: verifies/fetches the ClinVar GRCh38 VCF+tbi on ws and prints (never runs) the `arv-put` command for the
+  `acmg_clinvar_vcf` Keep upload (`keep:TODO-ACMG-PDH/clinvar.vcf.gz` placeholders in the `main-vg*.json`).
+- **Tests**: `tests/test_agent.py` + `tests/test_cli_llm.py` (FakeBackend-scripted tool calls; no real model offline) cover validation/contract, budgets and statuses, review-set selection, run-level status and the CLI wiring incl. `adjusted_by_agent` flags; `tests/test_gene_table.py` covers the gene-table builder on a fixture subset.
+
+### Changed
+- `acmg_agent/cli.py` records `llm.{backend, model, status}` and per-criterion `adjusted_by_agent` flags; phenotype/HPO/sex are passed via env/plain args and stored in the assessment JSON header. **Coming (supervisor integration per WIRING.md): `main-vg.cwl` genomelinter step and its outputs (`output_after_genomelinter`, `openrouter_*`, `genomelinter_*` inputs) are removed; the model writes the report narrative from the final criteria list, the conclusion stays decided in code.**
+- Header line: workflow tail is now `VEP → slivar → acmg-agent` (gene-linter path retired).
 
 ## [Unreleased] — GIAB benchmark workflow and evaluation tools (2026-11)
 
