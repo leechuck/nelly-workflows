@@ -21,7 +21,7 @@
         "location": "keep:b4a8fbf918d6744687ac1b775456ca79+536/NIST-small_R2.fastq.gz"},
     "hapl": {
         "class": "File",
-        "location": "keep:1d5ad2aefb6e809dddaffea3a0558415+5657/ksa_hg38.hapl"
+        "location": "keep:b3a8a85e970122c02ea058eb43457b07+177/ksa_hg38.hapl"
     },
     "dv_mode": "standard",
     "aligned_bam_output": "aligned.bam",
