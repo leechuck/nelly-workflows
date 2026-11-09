@@ -125,7 +125,11 @@ _orig_eval_res = cwltool.process.Process.evalResources
 def _eval_res_scaled(self, builder, runtimeContext):
     res = _orig_eval_res(self, builder, runtimeContext)
     if res.get("cores", 1) >= 8:
-        target = int(os.environ.get("NELLY_STEP_CORES", os.environ.get("SLURM_CPUS_PER_TASK", "32")))
+        slurm_cpus = int(os.environ.get("SLURM_CPUS_PER_TASK", "0"))
+        default_target = max(8, slurm_cpus - 2) if slurm_cpus > 0 else 32
+        target = int(os.environ.get("NELLY_STEP_CORES", str(default_target)))
+        if slurm_cpus > 0 and target >= slurm_cpus:
+            target = max(8, slurm_cpus - 2)
         if target > res["cores"]:
             res["cores"] = target
     return res
