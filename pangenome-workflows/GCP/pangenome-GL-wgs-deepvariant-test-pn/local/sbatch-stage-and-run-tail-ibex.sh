@@ -158,13 +158,13 @@ if [ -d "$EXISTING_EXOMISER/2512_hg38" ] && [ ! -d "$INPUTS/exomiser/data/2512_h
   fi
 fi
 
-if [ ! -d "$INPUTS/vep_cache/homo_sapiens/116_GRCh38/chr1" ]; then
+if [ ! -f "$INPUTS/vep_cache/homo_sapiens/116_GRCh38/.staged_complete" ]; then
   rmdir "$INPUTS/vep_cache/.lock-vep" 2>/dev/null || true
   if mkdir "$INPUTS/vep_cache/.lock-vep" 2>/dev/null; then
-    echo "[$(date -Is)] Downloading VEP 116 cache from Keep (8afec8cdb796367144fa2bcec3a3dc59+624229) with 24 parallel workers -> $INPUTS/vep_cache/"
+    echo "[$(date -Is)] Downloading VEP 116 cache from Keep (8afec8cdb796367144fa2bcec3a3dc59+624229) by unique Keep block (16 workers) -> $INPUTS/vep_cache/"
     "$PYTHON" - "$INPUTS/vep_cache" <<'PY'
-import concurrent.futures, os, sys
-import arvados, arvados.collection
+import collections, concurrent.futures, os, sys, threading
+import arvados, arvados.collection, arvados.keep
 
 dst_root = sys.argv[1]
 cr = arvados.collection.CollectionReader("8afec8cdb796367144fa2bcec3a3dc59+624229")
@@ -176,31 +176,72 @@ def walk_col(col, rel=""):
         if isinstance(v, arvados.collection.Subcollection):
             walk_col(v, p)
         else:
-            items.append((p, v.size()))
+            items.append((p, v))
 
 walk_col(cr)
-print(f"Total VEP cache files to check/stage: {len(items)}", flush=True)
-
-def fetch_one(item):
-    rel_path, expected_size = item
+blocks = collections.defaultdict(list)
+dirs = set()
+missing_files = []
+for rel_path, fobj in items:
     out_path = os.path.join(dst_root, rel_path)
+    expected_size = fobj.size()
     if os.path.exists(out_path) and os.path.getsize(out_path) == expected_size:
-        return 0
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    local_cr = arvados.collection.CollectionReader("8afec8cdb796367144fa2bcec3a3dc59+624229")
-    tmp_path = f"{out_path}.part.{os.getpid()}"
-    with local_cr.open(rel_path, "rb") as src, open(tmp_path, "wb") as dst:
-        while True:
-            buf = src.read(4 * 1024 * 1024)
-            if not buf:
-                break
-            dst.write(buf)
-    os.replace(tmp_path, out_path)
-    return expected_size
+        continue
+    dirs.add(os.path.dirname(out_path))
+    missing_files.append((out_path, expected_size))
+    for seg in fobj.segments():
+        blocks[seg.locator].append((out_path, seg.range_start, seg.segment_offset, seg.range_size))
 
-with concurrent.futures.ThreadPoolExecutor(max_workers=24) as ex:
-    total = sum(ex.map(fetch_one, items))
-print(f"Staged {total / (1024**3):.2f} GiB into {dst_root}", flush=True)
+for d in dirs:
+    os.makedirs(d, exist_ok=True)
+
+print(f"VEP cache: {len(items)} total files, {len(missing_files)} to stage across {len(blocks)} unique Keep blocks", flush=True)
+
+tls = threading.local()
+def get_kc():
+    if not hasattr(tls, "kc"):
+        api = arvados.api("v1")
+        tls.kc = arvados.keep.KeepClient(api_client=api)
+    return tls.kc
+
+done_blocks = 0
+lock = threading.Lock()
+total_blocks = len(blocks)
+
+def fetch_block(item):
+    global done_blocks
+    locator, slices = item
+    kc = get_kc()
+    buf = memoryview(kc.get(locator))
+    written = 0
+    for out_path, file_off, seg_off, size in slices:
+        fd = os.open(out_path, os.O_CREAT | os.O_WRONLY, 0o644)
+        try:
+            os.pwrite(fd, buf[seg_off : seg_off + size], file_off)
+        finally:
+            os.close(fd)
+        written += size
+    with lock:
+        done_blocks += 1
+        if done_blocks % 25 == 0 or done_blocks == total_blocks:
+            print(f"   Keep blocks fetched: {done_blocks}/{total_blocks}", flush=True)
+    return written
+
+if blocks:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as ex:
+        total_bytes = sum(ex.map(fetch_block, blocks.items()))
+    print(f"Staged {total_bytes / (1024**3):.2f} GiB across {total_blocks} Keep blocks", flush=True)
+
+for out_path, expected_size in missing_files:
+    actual = os.path.getsize(out_path) if os.path.exists(out_path) else -1
+    if actual != expected_size:
+        raise RuntimeError(f"Size mismatch on {out_path}: {actual} != {expected_size}")
+
+sentinel = os.path.join(dst_root, "homo_sapiens", "116_GRCh38", ".staged_complete")
+os.makedirs(os.path.dirname(sentinel), exist_ok=True)
+with open(sentinel, "w") as f:
+    f.write("ok\n")
+print("VEP cache verified complete.", flush=True)
 PY
     rmdir "$INPUTS/vep_cache/.lock-vep" 2>/dev/null || true
   fi
@@ -219,7 +260,7 @@ for req_sif in \
     sleep 5
   done
 done
-while [ ! -d "$INPUTS/exomiser/data/2512_hg38" ] || [ ! -d "$INPUTS/vep_cache/homo_sapiens/116_GRCh38" ]; do
+while [ ! -d "$INPUTS/exomiser/data/2512_hg38" ] || [ ! -f "$INPUTS/vep_cache/homo_sapiens/116_GRCh38/.staged_complete" ]; do
   echo "[$(date -Is)] Waiting for exomiser/vep_cache..."
   sleep 5
 done
