@@ -160,8 +160,13 @@ def eval_pm2(ev: Evidence) -> Criterion:
     thr = PM2_MAX_AF.get(ev.moi, 1e-4)
     src = f" ({ev.max_af_source})" if ev.max_af_source else ""
     f_ctx = _founder_af_context(ev)
-    if ev.max_af is None or ev.max_af == 0.0:
-        return Criterion("PM2", "met", "supporting", f"absent from gnomAD (< {thr:.0e} for {ev.moi}; PM2_Supporting per ClinGen SVI{f_ctx})")
+    if ev.max_af is None or ev.max_af <= 0.0:
+        return Criterion(
+            "PM2",
+            "met",
+            "supporting",
+            f"not observed in gnomAD v4 (exomes/genomes) / absent from gnomAD (< {thr:.0e} for {ev.moi}; PM2_Supporting per ClinGen SVI{f_ctx})",
+        )
     if ev.max_af < thr:
         return Criterion("PM2", "met", "supporting", f"max AF {ev.max_af:.2e}{src} < {thr:.0e} for {ev.moi} (PM2_Supporting per ClinGen SVI{f_ctx})")
     return Criterion("PM2", "not_met", None, f"max AF {ev.max_af:.2e}{src} >= {thr:.0e} for {ev.moi}{f_ctx}")
@@ -313,19 +318,19 @@ def eval_pp5(ev: Evidence) -> Criterion:
 
 
 def eval_ba1(ev: Evidence) -> Criterion:
-    if ev.max_af is None:
-        return Criterion("BA1", "not_met", None, "variant absent from population databases")
+    if ev.max_af is None or ev.max_af <= 0.0:
+        return Criterion("BA1", "not_met", None, f"not observed in gnomAD v4 (exomes/genomes) (< {BA1_AF})")
     if ev.max_af >= BA1_AF:
         return Criterion("BA1", "met", "stand_alone", f"max AF {ev.max_af:.4f} >= {BA1_AF}")
     return Criterion("BA1", "not_met", None, f"max AF {ev.max_af:.2e} < {BA1_AF}")
 
 
 def eval_bs1(ev: Evidence) -> Criterion:
-    if ev.max_af is None:
-        return Criterion("BS1", "not_met", None, "variant absent from population databases")
+    thr = ev.bs1_threshold if ev.bs1_threshold is not None else BS1_DEFAULT.get(ev.moi, 5e-3)
+    if ev.max_af is None or ev.max_af <= 0.0:
+        return Criterion("BS1", "not_met", None, f"not observed in gnomAD v4 (exomes/genomes) (< BS1 threshold {thr:.4f})")
     if ev.max_af >= BA1_AF:
         return Criterion("BS1", "not_met", None, "superseded by BA1")
-    thr = ev.bs1_threshold if ev.bs1_threshold is not None else BS1_DEFAULT.get(ev.moi, 5e-3)
     if ev.max_af >= thr:
         return Criterion("BS1", "met", "strong", f"max AF {ev.max_af:.4f} >= BS1 threshold {thr:.4f} for {ev.moi}")
     return Criterion("BS1", "not_met", None, f"max AF {ev.max_af:.2e} < BS1 threshold {thr:.4f}")

@@ -341,12 +341,14 @@ def cmd_assess(args: argparse.Namespace) -> int:
                 agent_status = str(agent.get("agent_status") or "skipped")
                 agent_rationale = agent.get("agent_rationale")
                 agent_narrative = agent.get("narrative") if agent_status == "ok" else None
+                agent_wall_seconds = agent.get("wall_seconds")
             else:
                 final_criteria = det
                 adjusted = []
                 agent_status = "not_reviewed"
                 agent_rationale = None
                 agent_narrative = None
+                agent_wall_seconds = None
             clf = classify(final_criteria)
             item = serialize_candidate_assessment(
                 c,
@@ -358,6 +360,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
                 agent_rationale=agent_rationale,
                 agent_narrative=agent_narrative,
                 agent_status=agent_status,
+                agent_wall_seconds=agent_wall_seconds,
             )
             assessed_list.append(item)
             assessed_by_key[key] = item
@@ -387,6 +390,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
                     "ranges": exp.get("ranges"),
                     "status": exp["status"],
                     "agent_status": exp.get("agent_status", "not_reviewed"),
+                    "agent_wall_seconds": exp.get("wall_seconds"),
                     "adjusted_by_agent": list(exp.get("adjusted_by_agent") or []),
                     "agent_rationale": exp.get("agent_rationale"),
                     "agent_narrative": exp.get("agent_narrative"),
@@ -428,6 +432,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
                     "ranges": exp.get("ranges"),
                     "status": exp["status"],
                     "agent_status": exp.get("agent_status", "not_reviewed"),
+                    "agent_wall_seconds": exp.get("wall_seconds"),
                     "adjusted_by_agent": list(exp.get("adjusted_by_agent") or []),
                     "agent_rationale": exp.get("agent_rationale"),
                     "agent_narrative": exp.get("agent_narrative"),
@@ -456,6 +461,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
                         "rule_based_class": lead_item["rule_based_class"],
                         "conflict": lead_item["conflict"],
                         "agent_status": lead_item.get("agent_status"),
+                        "agent_wall_seconds": lead_item.get("agent_wall_seconds"),
                         "adjusted_by_agent": lead_item.get("adjusted_by_agent", []),
                         "agent_rationale": lead_item.get("agent_rationale"),
                         "agent_narrative": lead_item.get("agent_narrative"),
@@ -514,9 +520,13 @@ def cmd_assess(args: argparse.Namespace) -> int:
             else (assessed_list[0].get("agent_narrative") if assessed_list else None)
         )
         phenotype = (args.phenotype or "")
+        pipeline_version = os.environ.get("ACMG_PIPELINE_VERSION") or "nelly-workflows modernise-2026-11"
+        image_tag = os.environ.get("ACMG_IMAGE_TAG") or "nelly-acmg-agent:v5"
         data = {
             "schema_version": 1,
             "sample": args.sample,
+            "pipeline_version": pipeline_version,
+            "image_tag": image_tag,
             "strchive_used": strchive_used,
             "sex": args.sex or None,
             "hpo_terms": [t for t in re.split(r"[\s,]+", args.hpo_terms or "") if t],
