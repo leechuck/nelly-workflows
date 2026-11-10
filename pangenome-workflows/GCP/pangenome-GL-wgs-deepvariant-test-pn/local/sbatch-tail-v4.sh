@@ -25,7 +25,9 @@ if [[ ! -s "$SIF_DIR/nelly-acmg-agent:v5.sif" ]]; then
     gzip -dc "$SIF_DIR/nelly-acmg-agent-v5.tar.gz" > "$SIF_DIR/nelly-acmg-agent-v5.tar.tmp"
     mv "$SIF_DIR/nelly-acmg-agent-v5.tar.tmp" "$SIF_DIR/nelly-acmg-agent-v5.tar"
   fi
-  singularity build "$SIF_DIR/nelly-acmg-agent:v5.sif.tmp" "docker-archive://$SIF_DIR/nelly-acmg-agent-v5.tar"
+  mkdir -p "/tmp/sing_build_$$"
+  SINGULARITY_TMPDIR="/tmp/sing_build_$$" singularity build "$SIF_DIR/nelly-acmg-agent:v5.sif.tmp" "docker-archive://$SIF_DIR/nelly-acmg-agent-v5.tar"
+  rm -rf "/tmp/sing_build_$$"
   mv "$SIF_DIR/nelly-acmg-agent:v5.sif.tmp" "$SIF_DIR/nelly-acmg-agent:v5.sif"
   ln -sf "nelly-acmg-agent:v5.sif" "$SIF_DIR/nelly-acmg-agent_v5.sif"
   ln -sf "nelly-acmg-agent:v5.sif" "$SIF_DIR/nelly-acmg-agent:v4.sif"
