@@ -21,11 +21,11 @@
   },
   "reads1": {
     "class": "File",
-    "path": "/data/nelly-local/inputs/giab/HG002.novaseq.pcr-free.30x.R1.fastq.gz"
+    "path": "/data/nelly-local/inputs/giab/hg002/HG002.novaseq.pcr-free.30x.R1.fastq.gz"
   },
   "reads2": {
     "class": "File",
-    "path": "/data/nelly-local/inputs/giab/HG002.novaseq.pcr-free.30x.R2.fastq.gz"
+    "path": "/data/nelly-local/inputs/giab/hg002/HG002.novaseq.pcr-free.30x.R2.fastq.gz"
   },
   "dv_mode": "standard",
   "dv_model_type": "WGS",
@@ -35,17 +35,17 @@
   "eh_sex": "male",
   "truth_vcf": {
     "class": "File",
-    "path": "/data/nelly-local/inputs/giab/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz",
+    "path": "/data/nelly-local/inputs/giab/truth/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz",
     "secondaryFiles": [
       {
         "class": "File",
-        "path": "/data/nelly-local/inputs/giab/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi"
+        "path": "/data/nelly-local/inputs/giab/truth/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi"
       }
     ]
   },
   "confident_bed": {
     "class": "File",
-    "path": "/data/nelly-local/inputs/giab/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed"
+    "path": "/data/nelly-local/inputs/giab/truth/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed"
   },
   "happy_prefix": "HG002.standard.happy"
 }
