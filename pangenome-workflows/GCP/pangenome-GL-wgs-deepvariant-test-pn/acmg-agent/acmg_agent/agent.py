@@ -29,10 +29,14 @@ from typing import Any
 from acmg_agent.llm_backends import Message  # noqa: F401 (re-export for callers)
 from acmg_agent.model import Criterion, Evidence
 from acmg_agent.tools import (
+    REPEAT_READ_TOOL,
+    REPEAT_SUBMIT_TOOL,
     SUBMIT_TOOL,
     EvidencePack,
+    RepeatPack,
     all_tool_specs,
     build_prompt_context,
+    repeat_tool_specs,
 )
 
 ALL_CRITERION_CODES = frozenset({
@@ -256,13 +260,22 @@ def _tier_of(cand: dict) -> int:
         return 99
 
 
+def _rank_sort_key(cand: dict, idx: int) -> tuple[int, int, int, int]:
+    is_lead = 0 if cand.get("is_leading") else 1
+    raw_rank = cand.get("rank", idx)
+    try:
+        r = int(raw_rank)
+    except (TypeError, ValueError):
+        r = idx
+    return (is_lead, r, _tier_of(cand), idx)
+
+
 def select_review_set(candidates: list[dict], *, max_variants: int = MAX_VARIANTS) -> list[int]:
-    """Indices to review: tier 0-2 plus the top 5 overall, capped, rank order."""
-    order = sorted(range(len(candidates)), key=lambda i: candidates[i].get("rank", 10 ** 6))
+    """Indices to review: tier 0-2 plus the top 5 overall, capped, in strict rank order (leading first)."""
+    order = sorted(range(len(candidates)), key=lambda i: _rank_sort_key(candidates[i], i))
     top5 = set(order[:5])
-    tiers = {i for i in order if _tier_of(candidates[i]) <= 2}
-    selected = set(sorted(tiers | top5)[:max_variants])
-    return [i for i in order if i in selected]
+    eligible = [i for i in order if i in top5 or _tier_of(candidates[i]) <= 2]
+    return eligible[:max_variants]
 
 
 def run_agent(
@@ -388,6 +401,195 @@ def _generate_narrative(
     return None
 
 
+EXPANSION_SYSTEM_PROMPT = (
+    "You are a clinical genetics reviewer writing the grounded interpretation "
+    "for a leading short tandem repeat (STR) expansion call from ExpansionHunter "
+    "classified with STRchive thresholds.\n"
+    "Contract:\n"
+    "1. Use get_repeat_call to inspect the RepeatCall fields (gene, alleles/genotype, "
+    "CI, STRchive ranges, disease, MOI), then call submit_expansion_narrative with "
+    "a concise clinical narrative (3-6 sentences).\n"
+    "2. Do NOT adjust or invent ACMG 28-criteria codes; repeat expansions are "
+    "evaluated by locus-specific repeat-count thresholds, not SNV/indel ACMG criteria.\n"
+    "3. Mention only the repeat expansion gene and values present in the RepeatCall "
+    "pack (repeat alleles, confidence interval, normal/intermediate/pathogenic "
+    "ranges, mode of inheritance, and disease). Do not cite PMIDs, external "
+    "literature, or any number absent from the pack."
+)
+
+
+def repeat_pack_allowed_numbers(pack: RepeatPack) -> set[float]:
+    """Numbers legitimately citable in a repeat expansion narrative."""
+    allowed: set[float] = set(_extract_numbers(pack.as_json()))
+    # Allow allele indices 1, 2 and 95 (for '95% CI')
+    allowed |= {1.0, 2.0, 95.0}
+    return allowed
+
+
+def validate_expansion_narrative(
+    pack: RepeatPack,
+    narrative: str,
+    *,
+    allowed_numbers: set[float] | None = None,
+    forbidden_genes: set[str] | None = None,
+) -> tuple[bool, str]:
+    """Enforce fail-closed grounding contract for a leading repeat expansion narrative."""
+    if not isinstance(narrative, str) or not narrative.strip():
+        return (False, "narrative must be a non-empty string")
+    text = narrative.strip()
+    if PMC_RE.search(text):
+        return (False, "narrative cites a PMID/literature reference; only RepeatCall pack values are allowed")
+    nums = allowed_numbers if allowed_numbers is not None else repeat_pack_allowed_numbers(pack)
+    if not _numbers_allowed(text, nums):
+        return (False, "narrative cites a number not present in the RepeatCall pack")
+    if pack.gene and not re.search(rf"\b{re.escape(pack.gene)}\b", text, re.IGNORECASE):
+        return (False, f"narrative must name the repeat expansion gene {pack.gene}")
+    for fg in (forbidden_genes or set()):
+        if fg and fg.upper() != pack.gene.upper():
+            if re.search(rf"\b{re.escape(fg)}\b", text):
+                return (False, f"narrative mentions another candidate gene ({fg}) outside the RepeatCall pack")
+    return (True, "ok")
+
+
+def run_expansion_agent(
+    repeat_call: Any,
+    backend: Any,
+    *,
+    max_calls: int = MAX_TOOL_CALLS,
+    per_variant_seconds: int = PER_VARIANT_SECONDS,
+    forbidden_genes: set[str] | None = None,
+) -> AgentResult:
+    """Bounded, grounded narrative loop for a leading repeat expansion.
+
+    Tool access is restricted to RepeatCall fields only (gene, alleles/genotype,
+    CI, STRchive ranges, disease, MOI). No ACMG criteria adjustments are allowed.
+    """
+    pack = RepeatPack(repeat_call)
+    allowed_numbers = repeat_pack_allowed_numbers(pack)
+    tool_specs = repeat_tool_specs()
+    user_prompt = (
+        "Leading repeat expansion RepeatCall pack (JSON):\n"
+        f"{pack.as_json()}\n\n"
+        "Inspect the RepeatCall fields (gene, alleles, CI, STRchive ranges, disease, MOI) "
+        "using get_repeat_call if needed, and submit a grounded clinical narrative via "
+        "submit_expansion_narrative. Do not adjust any ACMG criteria."
+    )
+    messages: list[Any] = [
+        Message(role="system", content=EXPANSION_SYSTEM_PROMPT),
+        Message(role="user", content=user_prompt),
+    ]
+    deadline = time.monotonic() + per_variant_seconds
+    calls = 0
+
+    def fallback(reason: str, status: str) -> AgentResult:
+        return AgentResult(
+            criteria=[],
+            rationale=reason,
+            status=status,
+            narrative=None,
+            adjusted=[],
+            n_tool_calls=calls,
+        )
+
+    while True:
+        if time.monotonic() >= deadline:
+            return fallback("per-variant time budget exhausted before a valid expansion narrative", "timeout")
+        if calls >= max_calls:
+            return fallback("tool-call budget exhausted before a valid expansion narrative; deterministic result kept", "rejected")
+
+        try:
+            reply = backend.chat(messages, tool_specs)
+        except Exception as exc:
+            return fallback(f"LLM backend failed: {exc}", "failed")
+        calls += 1
+
+        if not reply.tool_calls:
+            content_text = (reply.content or "").strip()
+            if content_text:
+                ok, reason = validate_expansion_narrative(
+                    pack,
+                    content_text,
+                    allowed_numbers=allowed_numbers,
+                    forbidden_genes=forbidden_genes,
+                )
+                if ok:
+                    return AgentResult(
+                        criteria=[],
+                        rationale=content_text,
+                        status="ok",
+                        narrative=content_text,
+                        adjusted=[],
+                        n_tool_calls=calls,
+                    )
+                messages.append(Message(role="assistant", content=reply.content))
+                messages.append(Message(
+                    role="user",
+                    content=f"NARRATIVE REJECTED: {reason}. Call get_repeat_call or submit_expansion_narrative with a grounded narrative for {pack.gene}.",
+                ))
+            else:
+                messages.append(Message(role="assistant", content=reply.content))
+                messages.append(Message(
+                    role="user",
+                    content=f"Call get_repeat_call to inspect the pack, or submit_expansion_narrative to finalise the narrative for {pack.gene}.",
+                ))
+            continue
+
+        messages.append(Message(role="assistant", content=reply.content, tool_calls=list(reply.tool_calls)))
+        try:
+            for tc in reply.tool_calls:
+                if time.monotonic() >= deadline:
+                    return fallback("per-variant time budget exhausted during tool handling", "timeout")
+                if tc.name in (REPEAT_SUBMIT_TOOL, SUBMIT_TOOL):
+                    args_dict = tc.arguments if isinstance(tc.arguments, dict) else {}
+                    if args_dict.get("criteria"):
+                        messages.append(Message(
+                            role="tool",
+                            content="SUBMISSION REJECTED: repeat expansion review does not allow ACMG criteria adjustments",
+                            name=tc.name,
+                            tool_call_id=tc.id,
+                        ))
+                        continue
+                    nar = str(args_dict.get("narrative") or args_dict.get("rationale") or "").strip()
+                    ok, reason = validate_expansion_narrative(
+                        pack,
+                        nar,
+                        allowed_numbers=allowed_numbers,
+                        forbidden_genes=forbidden_genes,
+                    )
+                    if ok:
+                        rat = str(args_dict.get("rationale") or nar).strip()
+                        return AgentResult(
+                            criteria=[],
+                            rationale=rat,
+                            status="ok",
+                            narrative=nar,
+                            adjusted=[],
+                            n_tool_calls=calls,
+                        )
+                    messages.append(Message(
+                        role="tool",
+                        content=f"SUBMISSION REJECTED: {reason}",
+                        name=tc.name,
+                        tool_call_id=tc.id,
+                    ))
+                elif tc.name == REPEAT_READ_TOOL:
+                    messages.append(Message(
+                        role="tool",
+                        content=pack.as_json(),
+                        name=tc.name,
+                        tool_call_id=tc.id,
+                    ))
+                else:
+                    messages.append(Message(
+                        role="tool",
+                        content=f"unknown tool for repeat expansion: {tc.name}",
+                        name=tc.name,
+                        tool_call_id=tc.id,
+                    ))
+        except Exception as exc:
+            return fallback(f"tool dispatch failed: {exc}", "failed")
+
+
 def run_all(
     candidates: list[dict],
     backend: Any,
@@ -396,6 +598,7 @@ def run_all(
     max_variants: int = MAX_VARIANTS,
     per_variant_seconds: int = PER_VARIANT_SECONDS,
     start_time: float | None = None,
+    leading_expansion: dict | None = None,
 ) -> tuple[list[dict], str]:
     """Review the selected candidates in-place; return (candidates, global status).
 
@@ -404,39 +607,89 @@ def run_all(
     reviewed keeps the deterministic criteria with agent_status="skipped" and
     the caller reports llm.status ("ok"/"partial"/...) from the return value.
 
+    When ``leading_expansion`` is provided (e.g. pathogenic-range HTT expansion),
+    it is reviewed FIRST with the full per_variant_seconds budget via
+    ``run_expansion_agent`` before any SNV/indel candidate consumes the global
+    budget.
+
     Each candidate dict is mutated: criteria -> final list, plus keys
     agent_status, agent_rationale, narrative, adjusted.
     """
     started = start_time if start_time is not None else time.monotonic()
     deadline = started + global_seconds
     selected = select_review_set(candidates, max_variants=max_variants)
+    for cand in candidates:
+        cand["agent_status"] = "skipped"
+        cand["agent_rationale"] = None
+        cand["narrative"] = None
+        cand["adjusted"] = []
+
+    if leading_expansion is not None:
+        leading_expansion["agent_status"] = "skipped"
+        leading_expansion["agent_rationale"] = None
+        leading_expansion["narrative"] = None
+        leading_expansion["agent_narrative"] = None
+        leading_expansion["adjusted"] = []
+        leading_expansion["adjusted_by_agent"] = []
+
+    if backend is None:
+        return candidates, OFF_STATUS
+    if not selected and leading_expansion is None:
+        return candidates, GLOBAL_STATUS_OK
+
     reviewed = fallbacks = 0
-    for i, cand in enumerate(candidates):
-        if i not in selected:
+    exp_ok = True
+    if leading_expansion is not None:
+        t_exp = time.monotonic()
+        exp_budget = int(per_variant_seconds) if per_variant_seconds <= 0 else max(1, int(per_variant_seconds))
+        snv_genes = {
+            str(c.get("gene") or getattr(c.get("evidence"), "gene", ""))
+            for c in candidates
+        } - {str(leading_expansion.get("gene") or "")}
+        exp_res = run_expansion_agent(
+            leading_expansion,
+            backend,
+            per_variant_seconds=exp_budget,
+            forbidden_genes=snv_genes,
+        )
+        leading_expansion["wall_seconds"] = round(time.monotonic() - t_exp, 2)
+        leading_expansion["n_tool_calls"] = exp_res.n_tool_calls
+        leading_expansion["agent_status"] = exp_res.status
+        leading_expansion["agent_rationale"] = exp_res.rationale
+        leading_expansion["narrative"] = exp_res.narrative if exp_res.status == "ok" else None
+        leading_expansion["agent_narrative"] = exp_res.narrative if exp_res.status == "ok" else None
+        leading_expansion["adjusted"] = []
+        leading_expansion["adjusted_by_agent"] = []
+        exp_ok = exp_res.status == "ok"
+        if not exp_ok:
+            fallbacks += 1
+
+    lead_idx = selected[0] if selected else None
+    for pos, i in enumerate(selected):
+        cand = candidates[i]
+        is_first_overall = (pos == 0 and leading_expansion is None)
+        # The leading finding always runs first and gets the full
+        # per_variant_seconds budget before any subsequent candidate can consume
+        # the global budget.
+        if not is_first_overall and time.monotonic() >= deadline:
             cand["agent_status"] = "skipped"
-            cand["agent_rationale"] = None
-            cand["narrative"] = None
-            cand["adjusted"] = []
-            continue
-        if backend is None:
-            cand["agent_status"] = "skipped"
-            cand["agent_rationale"] = None
-            cand["narrative"] = None
-            cand["adjusted"] = []
-            continue
-        if time.monotonic() >= deadline:
-            cand["agent_status"] = "skipped"
-            cand["agent_rationale"] = None
-            cand["narrative"] = None
-            cand["adjusted"] = []
+            fallbacks += 1
             continue
         reviewed += 1
         t_var = time.monotonic()
-        remaining_global = deadline - t_var
-        budget = min(per_variant_seconds, max(1, remaining_global))
+        if is_first_overall:
+            var_budget = int(per_variant_seconds) if per_variant_seconds <= 0 else max(1, int(per_variant_seconds))
+        else:
+            if per_variant_seconds <= 0:
+                var_budget = 0
+            else:
+                remaining_global = deadline - t_var
+                var_budget = max(1, int(min(per_variant_seconds, max(1, remaining_global))))
         result = run_agent(
-            cand["evidence"], cand["criteria"], backend,
-            per_variant_seconds=max(1, int(budget)),
+            cand["evidence"],
+            cand["criteria"],
+            backend,
+            per_variant_seconds=var_budget,
         )
         cand["wall_seconds"] = round(time.monotonic() - t_var, 2)
         cand["n_tool_calls"] = result.n_tool_calls
@@ -447,9 +700,15 @@ def run_all(
         cand["criteria"] = result.criteria
         if result.status != "ok":
             fallbacks += 1
-    if not selected or reviewed == 0:
-        return candidates, OFF_STATUS if backend is None else GLOBAL_STATUS_OK
-    if fallbacks == 0:
+
+    if leading_expansion is not None:
+        lead_ok = exp_ok
+    else:
+        lead_ok = (lead_idx is not None and candidates[lead_idx].get("agent_status") == "ok")
+
+    if not lead_ok:
+        return candidates, GLOBAL_STATUS_PARTIAL
+    if fallbacks == 0 and reviewed == len(selected):
         return candidates, GLOBAL_STATUS_OK
     return candidates, GLOBAL_STATUS_PARTIAL
 

@@ -6,8 +6,10 @@ from typing import Any
 from acmg_agent.agent import (
     run_agent,
     run_all,
+    run_expansion_agent,
     run_llm_layer,
     select_review_set,
+    validate_expansion_narrative,
     validate_submission,
 )
 from acmg_agent.criteria import evaluate_all
@@ -308,6 +310,205 @@ def test_narrative_mentions_only_candidate_genes():
     assert narrative and "HEXA" in narrative
     # the narrative names no gene outside the candidate set
     assert "HEXB" not in narrative
+
+
+def test_run_all_reviews_in_rank_order_starting_with_leading():
+    import re
+    # Input list is out of rank order: rank 3 first, leading (rank 1) in middle, rank 2 last
+    c_rank3 = _candidate(3, 2, "GENE3")
+    c_lead = _candidate(1, 0, "HEXA")
+    c_lead["is_leading"] = True
+    c_rank2 = _candidate(2, 1, "SEMA6B")
+    cands = [c_rank3, c_lead, c_rank2]
+
+    payload = {
+        "criteria": [
+            {"code": "PVS1", "status": "met", "strength": "strong",
+             "reason": "nmd_escape from the pack"},
+        ],
+        "rationale": "ok review",
+    }
+    backend = FakeBackend([
+        submit_tool(payload), "HEXA narrative",
+        submit_tool(payload), "SEMA6B narrative",
+        submit_tool(payload), "GENE3 narrative",
+    ])
+    out, status = run_all(cands, backend)
+    assert status == "ok"
+    # Extract the order in which genes were first presented to backend.chat
+    seen_genes: list[str] = []
+    for msgs, _tools in backend.calls:
+        user_txt = next((m.content or "" for m in msgs if m.role == "user"), "")
+        m = re.search(r'"gene":\s*"([^"]+)"', user_txt)
+        if m and (not seen_genes or seen_genes[-1] != m.group(1)):
+            seen_genes.append(m.group(1))
+    assert seen_genes == ["HEXA", "SEMA6B", "GENE3"]
+
+
+def test_run_all_gives_leading_full_budget_even_when_global_tight():
+    import time
+    c_lead = _candidate(1, 0, "HEXA")
+    c_lead["is_leading"] = True
+    c_other = _candidate(2, 1, "SEMA6B")
+    cands = [c_other, c_lead]
+
+    payload = {
+        "criteria": [
+            {"code": "PVS1", "status": "met", "strength": "strong",
+             "reason": "nmd_escape from the pack"},
+        ],
+        "rationale": "leading reviewed despite global elapsed",
+    }
+    backend = FakeBackend([submit_tool(payload), "HEXA leading narrative"])
+    # Global budget already exhausted before run_all starts, but leading candidate
+    # must still receive its full per_variant_seconds budget first.
+    out, status = run_all(
+        cands,
+        backend,
+        per_variant_seconds=60,
+        global_seconds=10,
+        start_time=time.monotonic() - 100,
+    )
+    by_gene = {c["gene"]: c for c in out}
+    assert by_gene["HEXA"]["agent_status"] == "ok"
+    assert by_gene["SEMA6B"]["agent_status"] == "skipped"
+    assert status == "partial"
+
+
+def test_run_all_never_ok_when_leading_candidate_unreviewed():
+    c_lead = _candidate(1, 0, "HEXA")
+    c_lead["is_leading"] = True
+    c_other = _candidate(2, 1, "SEMA6B")
+    cands = [c_lead, c_other]
+
+    ok_payload = {
+        "criteria": [
+            {"code": "PVS1", "status": "met", "strength": "strong",
+             "reason": "nmd_escape from the pack"},
+        ],
+        "rationale": "lower candidate ok",
+    }
+    # First candidate (HEXA) fails with RuntimeError; second candidate (SEMA6B) succeeds
+    backend = FakeBackend([
+        RuntimeError("timeout on leading"),
+        submit_tool(ok_payload),
+        "SEMA6B narrative",
+    ])
+    out, status = run_all(cands, backend)
+    by_gene = {c["gene"]: c for c in out}
+    assert by_gene["HEXA"]["agent_status"] == "failed"
+    assert by_gene["SEMA6B"]["agent_status"] == "ok"
+    assert status == "partial"
+
+
+def _make_htt_expansion() -> dict:
+    return {
+        "gene": "HTT",
+        "genotypes": "18/46",
+        "ci": "18-18/45-47",
+        "allele1": 18,
+        "allele2": 46,
+        "max_allele": 46,
+        "normal_max": 26,
+        "pathogenic_min": 36,
+        "moi": "AD",
+        "disease": "Huntington disease (OMIM:143100)",
+        "status": "pathogenic_range",
+        "tier": "pathogenic",
+        "ranges": {"benign": [1, 26], "intermediate": [27, 35], "pathogenic": [36, 250]},
+    }
+
+
+def test_expansion_agent_accepts_grounded_narrative_with_repeat_call_tool():
+    exp = _make_htt_expansion()
+    narrative_txt = (
+        "HTT carries a pathogenic-range repeat expansion with alleles 18/46 "
+        "(95% CI 18-18/45-47), where the expanded allele of 46 repeats exceeds "
+        "the pathogenic threshold of 36 repeats (normal <= 26) for autosomal "
+        "dominant (AD) Huntington disease (OMIM:143100)."
+    )
+    backend = FakeBackend([
+        ToolCall(name="get_repeat_call", arguments={}),
+        ToolCall(name="submit_expansion_narrative", arguments={"narrative": narrative_txt}),
+    ])
+    res = run_expansion_agent(exp, backend, forbidden_genes={"ATXN1", "CACNA1A"})
+    assert res.status == "ok"
+    assert res.adjusted == []
+    assert res.criteria == []
+    assert res.narrative == narrative_txt
+    assert res.n_tool_calls == 2
+
+
+def test_expansion_agent_rejects_criteria_adjustments_and_ungrounded_numbers():
+    exp = _make_htt_expansion()
+    backend = FakeBackend([
+        # Attempt 1: tries to adjust ACMG criteria -> rejected
+        ToolCall(
+            name="submit_assessment",
+            arguments={
+                "criteria": [{"code": "PVS1", "status": "met", "strength": "very_strong", "reason": "repeat"}],
+                "rationale": "HTT expansion",
+            },
+        ),
+        # Attempt 2: cites ungrounded number 999 -> rejected
+        ToolCall(
+            name="submit_expansion_narrative",
+            arguments={"narrative": "HTT expansion of 999 repeats causes disease."},
+        ),
+        # Attempt 3: cites PMID -> rejected
+        ToolCall(
+            name="submit_expansion_narrative",
+            arguments={"narrative": "HTT expansion of 46 repeats per PMID 12345678."},
+        ),
+        # Attempt 4: names forbidden gene ATXN1 -> rejected
+        ToolCall(
+            name="submit_expansion_narrative",
+            arguments={"narrative": "HTT and ATXN1 have 46 repeats."},
+        ),
+    ])
+    res = run_expansion_agent(exp, backend, max_calls=4, forbidden_genes={"ATXN1"})
+    assert res.status == "rejected"
+    assert res.narrative is None
+
+
+def test_run_all_reviews_leading_expansion_first_and_requires_it_for_ok():
+    import time
+    exp = _make_htt_expansion()
+    c_snv = _candidate(1, 2, "ATXN1")
+    narrative_txt = "HTT repeat expansion 18/46 (95% CI 18-18/45-47) >= 36 repeats for AD Huntington disease."
+    backend = FakeBackend([
+        ToolCall(name="get_repeat_call", arguments={}),
+        ToolCall(name="submit_expansion_narrative", arguments={"narrative": narrative_txt}),
+    ])
+    # Even when global budget is already elapsed, leading_expansion gets full per_variant_seconds first
+    out, status = run_all(
+        [c_snv],
+        backend,
+        per_variant_seconds=60,
+        global_seconds=10,
+        start_time=time.monotonic() - 100,
+        leading_expansion=exp,
+    )
+    assert exp["agent_status"] == "ok"
+    assert exp["agent_narrative"] == narrative_txt
+    assert out[0]["agent_status"] == "skipped"
+    assert status == "partial"
+
+    # When leading_expansion fails even though SNV succeeds, global status is still partial
+    exp2 = _make_htt_expansion()
+    ok_snv_payload = {
+        "criteria": [{"code": "PVS1", "status": "met", "strength": "strong", "reason": "nmd_escape in pack"}],
+        "rationale": "ok snv",
+    }
+    backend2 = FakeBackend([
+        RuntimeError("expansion timeout"),
+        submit_tool(ok_snv_payload),
+        "ATXN1 narrative",
+    ])
+    out2, status2 = run_all([_candidate(1, 2, "ATXN1")], backend2, leading_expansion=exp2)
+    assert exp2["agent_status"] == "failed"
+    assert out2[0]["agent_status"] == "ok"
+    assert status2 == "partial"
 
 
 # ----------------------------------------------------------------- backends --

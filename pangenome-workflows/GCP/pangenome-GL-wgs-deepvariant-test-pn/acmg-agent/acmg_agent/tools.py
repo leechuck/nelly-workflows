@@ -238,3 +238,158 @@ def build_prompt_context(pack: EvidencePack) -> str:
     recognises as 'present in the pack'.
     """
     return pack.as_json()
+
+
+REPEAT_READ_TOOL = "get_repeat_call"
+REPEAT_SUBMIT_TOOL = "submit_expansion_narrative"
+REPEAT_TOOL_NAMES = (REPEAT_READ_TOOL, REPEAT_SUBMIT_TOOL)
+
+
+def repeat_tool_specs() -> list[dict]:
+    """Read tool + write tool for the bounded leading repeat-expansion narrative pass."""
+    return [
+        _read_tool_spec(
+            REPEAT_READ_TOOL,
+            "Repeat expansion call fields from ExpansionHunter and STRchive: "
+            "gene, alleles/genotype, max_allele, 95% confidence interval (ci), "
+            "STRchive repeat-length ranges (benign, intermediate, pathogenic, "
+            "normal_max, pathogenic_min, tier), disease name, and mode of inheritance (moi).",
+        ),
+        {
+            "type": "function",
+            "function": {
+                "name": REPEAT_SUBMIT_TOOL,
+                "description": (
+                    "Submit the grounded clinical narrative for the leading repeat expansion. "
+                    "No ACMG 28-criteria adjustments are permitted for repeat expansions. "
+                    "Cite only the RepeatCall fields (gene, alleles/genotype, CI, STRchive ranges, "
+                    "disease, MOI)."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "narrative": {"type": "string"},
+                        "rationale": {"type": "string"},
+                    },
+                    "required": ["narrative"],
+                },
+            },
+        },
+    ]
+
+
+class RepeatPack:
+    """Immutable in-memory pack for one RepeatCall / ExpansionHunter expansion dict.
+
+    Exposes ONLY the RepeatCall fields: gene, alleles (genotype, alleles, max_allele),
+    ci, STRchive ranges (ranges, normal_max, pathogenic_min, tier), disease, moi.
+    """
+
+    def __init__(self, repeat_call: object):
+        if isinstance(repeat_call, dict):
+            self.gene = str(repeat_call.get("gene") or "").strip()
+            self.genotype = str(
+                repeat_call.get("genotype")
+                or repeat_call.get("genotypes")
+                or ""
+            ).strip()
+            raw_alleles = [
+                int(x) for x in self.genotype.split("/") if x.strip().lstrip("-").isdigit()
+            ]
+            if not raw_alleles:
+                a1 = repeat_call.get("allele1")
+                a2 = repeat_call.get("allele2")
+                raw_alleles = [int(x) for x in (a1, a2) if isinstance(x, int)]
+            self.alleles = raw_alleles
+            self.max_allele = int(
+                repeat_call.get("max_allele")
+                if repeat_call.get("max_allele") is not None
+                else (max(raw_alleles) if raw_alleles else 0)
+            )
+            self.ci = str(repeat_call.get("ci") or "").strip()
+            self.tier = str(repeat_call.get("tier") or repeat_call.get("status") or "pathogenic").strip()
+            raw_ranges = repeat_call.get("ranges")
+            norm_max = repeat_call.get("normal_max")
+            path_min = repeat_call.get("pathogenic_min")
+            if isinstance(raw_ranges, dict) and raw_ranges:
+                self.ranges = {
+                    k: list(v) if isinstance(v, (tuple, list)) else v
+                    for k, v in raw_ranges.items()
+                }
+            else:
+                self.ranges = {
+                    "benign": [None, norm_max],
+                    "intermediate": (
+                        [norm_max + 1, path_min - 1]
+                        if isinstance(norm_max, int) and isinstance(path_min, int) and path_min > norm_max + 1
+                        else [None, None]
+                    ),
+                    "pathogenic": [path_min, None],
+                }
+            b_range = self.ranges.get("benign")
+            p_range = self.ranges.get("pathogenic")
+            self.normal_max = (
+                int(norm_max)
+                if isinstance(norm_max, int)
+                else (b_range[1] if isinstance(b_range, (list, tuple)) and len(b_range) > 1 else None)
+            )
+            self.pathogenic_min = (
+                int(path_min)
+                if isinstance(path_min, int)
+                else (p_range[0] if isinstance(p_range, (list, tuple)) and len(p_range) > 0 else None)
+            )
+            self.disease = str(repeat_call.get("disease") or "").strip()
+            self.moi = str(repeat_call.get("moi") or "").strip()
+        else:
+            self.gene = str(getattr(repeat_call, "gene", "") or "").strip()
+            self.genotype = str(getattr(repeat_call, "genotype", "") or "").strip()
+            self.alleles = [
+                int(x) for x in self.genotype.split("/") if x.strip().lstrip("-").isdigit()
+            ]
+            self.max_allele = int(
+                getattr(repeat_call, "max_allele", 0)
+                or (max(self.alleles) if self.alleles else 0)
+            )
+            self.ci = str(getattr(repeat_call, "ci", "") or "").strip()
+            self.tier = str(getattr(repeat_call, "tier", "pathogenic") or "pathogenic").strip()
+            raw_ranges = getattr(repeat_call, "ranges", {}) or {}
+            self.ranges = {
+                k: list(v) if isinstance(v, (tuple, list)) else v
+                for k, v in raw_ranges.items()
+            }
+            b_range = self.ranges.get("benign")
+            p_range = self.ranges.get("pathogenic")
+            self.normal_max = b_range[1] if isinstance(b_range, (list, tuple)) and len(b_range) > 1 else None
+            self.pathogenic_min = p_range[0] if isinstance(p_range, (list, tuple)) and len(p_range) > 0 else None
+            self.disease = str(getattr(repeat_call, "disease", "") or "").strip()
+            self.moi = str(getattr(repeat_call, "moi", "") or "").strip()
+
+    def repeat_dict(self) -> dict:
+        return {
+            "gene": self.gene,
+            "genotype": self.genotype,
+            "alleles": self.alleles,
+            "max_allele": self.max_allele,
+            "ci": self.ci,
+            "tier": self.tier,
+            "ranges": self.ranges,
+            "normal_max": self.normal_max,
+            "pathogenic_min": self.pathogenic_min,
+            "disease": self.disease,
+            "moi": self.moi,
+        }
+
+    def as_json(self) -> str:
+        return json.dumps(self.repeat_dict(), sort_keys=True)
+
+    def dispatch(self) -> dict[str, Callable[[dict], str]]:
+        return {
+            REPEAT_READ_TOOL: self._tool_repeat_call,
+            REPEAT_SUBMIT_TOOL: self._tool_unsupported_submit,
+        }
+
+    def _tool_repeat_call(self, args: dict) -> str:
+        return self.as_json()
+
+    def _tool_unsupported_submit(self, args: dict) -> str:
+        return json.dumps({"error": "submit via the agent loop contract path"})

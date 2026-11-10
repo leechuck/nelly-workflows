@@ -623,6 +623,11 @@ def read_eh_expansions(path: str | Path | None, strchive_loci: dict | None = Non
                 "disease": disease,
                 "status": status,
                 "tier": tier_str,
+                "ranges": {
+                    "benign": (None, norm_max),
+                    "intermediate": (norm_max + 1, path_min - 1) if path_min > norm_max + 1 else (None, None),
+                    "pathogenic": (path_min, None),
+                },
             })
     order = {"pathogenic_range": 0, "intermediate_or_carrier": 1, "normal": 2}
     results.sort(key=lambda r: (order[r["status"]], -r["max_allele"], r["gene"]))

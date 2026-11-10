@@ -158,3 +158,40 @@ def test_slivar_info_merged():
     ev = build_evidence(cand, [], vep, clinvar, gt, slivar_info=slivar)
     assert ev.nhomalt == 0
     assert ev.popmax_af == pytest.approx(6.3013897e-6)
+
+
+def test_slivar_negative_one_sentinel_treated_as_none(tmp_path):
+    slivar_vcf = tmp_path / "slivar_neg1.vcf"
+    slivar_vcf.write_text("\n".join([
+        "##fileformat=VCFv4.2",
+        "##contig=<ID=chr22,length=50818468>",
+        '##INFO=<ID=gnomad_popmax_af,Number=1,Type=Float,Description="gnomAD popmax AF">',
+        '##INFO=<ID=gnomad_nhomalt,Number=1,Type=Integer,Description="gnomAD number of homozygotes">',
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample",
+        "chr22\t25000000\t.\tG\tA\t40\tPASS\tgnomad_popmax_af=-1;gnomad_nhomalt=-1\tGT\t0/1",
+    ]) + "\n")
+    slivar = read_slivar_info(slivar_vcf)
+    rec = slivar[("22", 25000000, "G", "A")]
+    assert rec["popmax_af"] is None
+    assert rec["nhomalt"] is None
+
+    vep = VepIndex.from_vcf(FIX / "vep.vcf")
+    clinvar = ClinvarIndex(FIX / "clinvar.vcf.gz")
+    gt = load_gene_table(FIX / "gene_table.tsv")
+    cand = {
+        "gene": "UNKNOWNGENE", "moi": "AD", "chrom": "22", "pos": "25000000",
+        "ref": "G", "alt": "A", "gt": "0/1", "effect": "missense_variant",
+        "hgvs": "", "rsid": "", "clinvar": "", "max_freq": "",
+        "path_score": "", "pheno_score": "", "combined": "",
+        "disease": "", "pheno_evidence": "",
+    }
+    ev = build_evidence(cand, [], vep, clinvar, gt, slivar_info=slivar)
+    assert ev.max_af is None
+    assert ev.max_af_source is None
+    assert ev.popmax_af is None
+    assert ev.nhomalt is None
+    by_code = {c.code: c for c in evaluate_all(ev)}
+    assert by_code["PM2"].status == "met"
+    assert "absent from gnomAD" in by_code["PM2"].rationale
+    assert "-1" not in by_code["PM2"].rationale
