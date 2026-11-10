@@ -21,9 +21,14 @@ module load singularity 2>/dev/null || true
 
 if [[ ! -s "$SIF_DIR/nelly-acmg-agent:v4.sif" ]]; then
   echo "[$(date -Is)] Building nelly-acmg-agent:v4.sif from $SIF_DIR/nelly-acmg-agent-v4.tar.gz ..."
-  singularity build "$SIF_DIR/nelly-acmg-agent:v4.sif.tmp" "docker-archive://$SIF_DIR/nelly-acmg-agent-v4.tar.gz"
+  if [[ ! -s "$SIF_DIR/nelly-acmg-agent-v4.tar" ]]; then
+    gzip -dc "$SIF_DIR/nelly-acmg-agent-v4.tar.gz" > "$SIF_DIR/nelly-acmg-agent-v4.tar.tmp"
+    mv "$SIF_DIR/nelly-acmg-agent-v4.tar.tmp" "$SIF_DIR/nelly-acmg-agent-v4.tar"
+  fi
+  singularity build "$SIF_DIR/nelly-acmg-agent:v4.sif.tmp" "docker-archive://$SIF_DIR/nelly-acmg-agent-v4.tar"
   mv "$SIF_DIR/nelly-acmg-agent:v4.sif.tmp" "$SIF_DIR/nelly-acmg-agent:v4.sif"
   ln -sf "nelly-acmg-agent:v4.sif" "$SIF_DIR/nelly-acmg-agent_v4.sif"
+  rm -f "$SIF_DIR/nelly-acmg-agent-v4.tar"
   echo "[$(date -Is)] Built $SIF_DIR/nelly-acmg-agent:v4.sif ($(stat -c %s "$SIF_DIR/nelly-acmg-agent:v4.sif") bytes)"
 fi
 
