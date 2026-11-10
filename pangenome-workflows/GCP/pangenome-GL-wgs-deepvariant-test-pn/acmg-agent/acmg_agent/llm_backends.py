@@ -21,9 +21,11 @@ from __future__ import annotations
 import http.client
 import json
 import os
+from pathlib import Path
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
@@ -41,13 +43,38 @@ class Message:
     """Role/content message; tool results carry ``role="tool"`` + ``name``.
 
     ``tool_calls`` is non-empty only on assistant messages that request
-    function calls.
+    function calls. ``finish_reason`` and ``usage`` capture completion
+    metadata from the backend response when present.
     """
     role: str
     content: str | None = None
     tool_calls: list[ToolCall] = field(default_factory=list)
     name: str | None = None
     tool_call_id: str | None = None
+    finish_reason: str | None = None
+    usage: dict[str, Any] | None = None
+    _trace_logged: bool = field(default=False, repr=False, compare=False)
+
+
+def append_llm_trace(
+    entry: dict[str, Any],
+    trace_path: str | os.PathLike[str] | None = None,
+) -> None:
+    """Append one JSONL trace record to ``<outdir>/llm-trace.jsonl``.
+
+    Never logs API keys or Authorization headers. Errors during trace
+    writing are swallowed so diagnostics can never crash an assessment.
+    """
+    raw_path = trace_path or os.environ.get("ACMG_LLM_TRACE_PATH", "").strip()
+    if not raw_path:
+        return
+    try:
+        p = Path(raw_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, default=str) + "\n")
+    except OSError:
+        pass
 
 
 class Backend(Protocol):
@@ -113,10 +140,16 @@ def _completion_to_message(resp: dict) -> Message:
     content = m.get("content")
     if content is not None and not isinstance(content, str):
         content = str(content)
+    finish_reason = choice.get("finish_reason")
+    if finish_reason is not None and not isinstance(finish_reason, str):
+        finish_reason = str(finish_reason)
+    usage = resp.get("usage") if isinstance(resp.get("usage"), dict) else None
     return Message(
         role="assistant",
         content=content,
         tool_calls=_parse_tool_calls(m.get("tool_calls")),
+        finish_reason=finish_reason,
+        usage=usage,
     )
 
 
@@ -125,7 +158,61 @@ def _is_truncated_empty(resp: dict, msg: Message) -> bool:
     finish_reason = choice.get("finish_reason")
     has_content = bool(msg.content and msg.content.strip())
     has_tools = bool(msg.tool_calls)
-    return finish_reason == "length" and not has_content and not has_tools
+    has_broken_tool_json = any(
+        isinstance(tc.arguments, dict) and "__invalid_json__" in tc.arguments
+        for tc in (msg.tool_calls or [])
+    )
+    return finish_reason == "length" and ((not has_content and not has_tools) or has_broken_tool_json)
+
+
+def _build_trace_entry(
+    *,
+    backend_name: str,
+    model_name: str | None,
+    session_affinity: str | None,
+    url: str | None,
+    max_tokens: int | None,
+    n_messages: int,
+    n_tools: int,
+    resp: dict | None,
+    msg: Message,
+    elapsed_seconds: float,
+    trace_meta: dict[str, Any] | None = None,
+    attempt: str = "initial",
+) -> dict[str, Any]:
+    choice = ((resp or {}).get("choices") or [{}])[0] if isinstance(resp, dict) else {}
+    choice_msg = (choice.get("message") or {}) if isinstance(choice, dict) else {}
+    reasoning_text = choice_msg.get("reasoning_content") or choice_msg.get("reasoning") or ""
+    meta = trace_meta or {}
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "backend": backend_name,
+        "model": model_name,
+        "session_affinity": session_affinity,
+        "gene": meta.get("gene"),
+        "phase": meta.get("phase", "chat"),
+        "attempt": attempt,
+        "request": {
+            "url": url,
+            "max_tokens": max_tokens,
+            "n_messages": n_messages,
+            "n_tools": n_tools,
+        },
+        "response": {
+            "id": (resp or {}).get("id") if isinstance(resp, dict) else None,
+            "model": (resp or {}).get("model") if isinstance(resp, dict) else model_name,
+            "finish_reason": msg.finish_reason,
+            "usage": msg.usage,
+            "reasoning_chars": len(str(reasoning_text)) if reasoning_text else 0,
+            "content": msg.content,
+            "content_chars": len(msg.content or ""),
+            "tool_calls": [
+                {"id": tc.id, "name": tc.name, "arguments": tc.arguments}
+                for tc in (msg.tool_calls or [])
+            ],
+        },
+        "elapsed_seconds": round(elapsed_seconds, 3),
+    }
 
 
 def _max_tokens_from_env(default: int = 4096) -> int:
@@ -178,18 +265,46 @@ class LlamaCppBackend:
         )
         self.backend_name = "llama"
         self.model_name = os.path.basename(model_path)
+        self.trace_path: str | None = None
 
-    def chat(self, messages: list[Message], tools: list[dict]) -> Message:
+    def chat(
+        self,
+        messages: list[Message],
+        tools: list[dict],
+        *,
+        max_tokens: int | None = None,
+        trace_meta: dict[str, Any] | None = None,
+    ) -> Message:
+        eff_max_tokens = max_tokens if (max_tokens is not None and max_tokens > 0) else self.max_tokens
         payload = [_message_to_openai(m) for m in messages]
         kwargs: dict[str, Any] = {
             "messages": payload,
-            "max_tokens": self.max_tokens,
+            "max_tokens": eff_max_tokens,
         }
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
+        t0 = time.monotonic()
         resp = self._llm.create_chat_completion(**kwargs)
-        return _completion_to_message(resp)
+        msg = _completion_to_message(resp)
+        msg._trace_logged = True
+        append_llm_trace(
+            _build_trace_entry(
+                backend_name=self.backend_name,
+                model_name=self.model_name,
+                session_affinity=None,
+                url=None,
+                max_tokens=eff_max_tokens,
+                n_messages=len(payload),
+                n_tools=len(tools or []),
+                resp=resp,
+                msg=msg,
+                elapsed_seconds=time.monotonic() - t0,
+                trace_meta=trace_meta,
+            ),
+            trace_path=self.trace_path,
+        )
+        return msg
 
 
 class OpenAICompatBackend:
@@ -223,6 +338,7 @@ class OpenAICompatBackend:
         self.session_affinity = session_affinity or f"{sample_id}-{uuid.uuid4()}"
         self.backend_name = "openai"
         self.model_name = model
+        self.trace_path: str | None = None
 
     def _post_json(self, body: dict[str, Any]) -> dict[str, Any]:
         payload = json.dumps(body).encode()
@@ -267,27 +383,85 @@ class OpenAICompatBackend:
                 raise RuntimeError(f"LLM endpoint returned non-JSON payload (HTTP {str(e)[:60]})") from e
         raise RuntimeError(f"LLM endpoint request failed: {last_err}")
 
-    def chat(self, messages: list[Message], tools: list[dict]) -> Message:
+    def chat(
+        self,
+        messages: list[Message],
+        tools: list[dict],
+        *,
+        max_tokens: int | None = None,
+        trace_meta: dict[str, Any] | None = None,
+    ) -> Message:
         # http.client over a scheme-validated http(s) URL only (no file:/custom schemes).
+        eff_max_tokens = max_tokens if (max_tokens is not None and max_tokens > 0) else self.max_tokens
+        payload_msgs = [_message_to_openai(m) for m in messages]
         base_body: dict[str, Any] = {
             "model": self.model,
-            "messages": [_message_to_openai(m) for m in messages],
-            "max_tokens": self.max_tokens,
+            "messages": payload_msgs,
+            "max_tokens": eff_max_tokens,
         }
         if tools:
             base_body["tools"] = tools
             base_body["tool_choice"] = "auto"
 
+        t0 = time.monotonic()
         resp = self._post_json(base_body)
         msg = _completion_to_message(resp)
+        msg._trace_logged = True
+        append_llm_trace(
+            _build_trace_entry(
+                backend_name=self.backend_name,
+                model_name=self.model_name,
+                session_affinity=self.session_affinity,
+                url=self.url,
+                max_tokens=eff_max_tokens,
+                n_messages=len(payload_msgs),
+                n_tools=len(tools or []),
+                resp=resp,
+                msg=msg,
+                elapsed_seconds=time.monotonic() - t0,
+                trace_meta=trace_meta,
+                attempt="initial",
+            ),
+            trace_path=self.trace_path,
+        )
         if _is_truncated_empty(resp, msg):
-            retry_body = dict(base_body, max_tokens=self.max_tokens * 2)
+            retry_max_tokens = eff_max_tokens * 2
+            retry_msgs = list(payload_msgs) + [
+                {
+                    "role": "user",
+                    "content": (
+                        "Your previous reply exhausted max_tokens during internal reasoning "
+                        "before emitting a tool call or response. Keep internal reasoning "
+                        "brief (under 500 tokens) and emit your tool call or response directly."
+                    ),
+                }
+            ]
+            retry_body = dict(base_body, messages=retry_msgs, max_tokens=retry_max_tokens)
+            t1 = time.monotonic()
             resp2 = self._post_json(retry_body)
             msg2 = _completion_to_message(resp2)
+            msg2._trace_logged = True
+            append_llm_trace(
+                _build_trace_entry(
+                    backend_name=self.backend_name,
+                    model_name=self.model_name,
+                    session_affinity=self.session_affinity,
+                    url=self.url,
+                    max_tokens=retry_max_tokens,
+                    n_messages=len(payload_msgs),
+                    n_tools=len(tools or []),
+                    resp=resp2,
+                    msg=msg2,
+                    elapsed_seconds=time.monotonic() - t1,
+                    trace_meta=trace_meta,
+                    attempt="length_retry",
+                ),
+                trace_path=self.trace_path,
+            )
             if _is_truncated_empty(resp2, msg2):
                 raise RuntimeError(
                     f"LLM response truncated (finish_reason=length) with no content/tool_calls "
-                    f"after retry at max_tokens={self.max_tokens * 2}"
+                    f"after retry at max_tokens={retry_max_tokens}"
                 )
             return msg2
         return msg

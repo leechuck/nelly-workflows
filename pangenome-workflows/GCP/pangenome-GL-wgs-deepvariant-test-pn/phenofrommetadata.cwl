@@ -78,3 +78,16 @@ outputs:
           }
           return self[0].contents.replace(/[\r\n]+$/, '');
         }
+  patient_identifier:
+    type: string
+    outputBinding:
+      glob: patient_identifier.txt
+      loadContents: true
+      outputEval: |
+        ${
+          if (self.length === 0) {
+            if (runtime.exitCode !== 0) return "";
+            throw new Error("patient context output patient_identifier.txt is missing");
+          }
+          return self[0].contents.replace(/[\r\n]+$/, '');
+        }

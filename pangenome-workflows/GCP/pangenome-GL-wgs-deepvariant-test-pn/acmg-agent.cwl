@@ -35,7 +35,7 @@ requirements:
       ACMG_LLM_MAX_TOKENS: $(String(inputs.llm_max_tokens))
       ACMG_PIPELINE_VERSION: $(inputs.pipeline_version)
   DockerRequirement:
-    dockerPull: 'nelly-acmg-agent:v6'
+    dockerPull: 'nelly-acmg-agent:v7'
 arguments:
   # VEP-annotated mini-VCF from the vep-candidates step: the ACMG evidence
   # builder's primary annotation source (consequence, MANE/HGVS, AFs).
@@ -47,6 +47,8 @@ arguments:
     valueFrom: $(inputs.gene_table.path)
   - prefix: --sample
     valueFrom: $(inputs.sample_name)
+  - prefix: --patient-id
+    valueFrom: $(inputs.patient_id)
   - prefix: --top
     valueFrom: $(inputs.top_candidates)
   # HPO term IDs and sex as plain arguments; free-text labels via env only.
@@ -98,6 +100,9 @@ inputs:
   sample_name:
     type: string
     default: "sample"
+  patient_id:
+    type: string
+    default: ""
   hpo_terms:
     type: string
     default: ""
@@ -145,3 +150,7 @@ outputs:
     format: "http://edamontology.org/format_3508"   # PDF
     outputBinding:
       glob: acmg-report.pdf
+  llm_trace:
+    type: File?
+    outputBinding:
+      glob: llm-trace.jsonl

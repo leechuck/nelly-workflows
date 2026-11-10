@@ -38,8 +38,8 @@ class CliFakeBackend:
         payload = self.submitted_per_gene.get(gene)
         if payload is not None and gene not in self._submitted:
             self._submitted.add(gene)
-            return Message(role="assistant", tool_calls=[ToolCall(name="submit_assessment", arguments=payload)])
-        return Message(role="assistant", content=f"review narrative for {gene}")
+            return Message(role="assistant", tool_calls=[ToolCall(name="submit_assessment", arguments=payload)], finish_reason="tool_calls")
+        return Message(role="assistant", content=f"review narrative for {gene}.", finish_reason="stop")
 
     @staticmethod
     def _gene_of(messages: list[Message]) -> str:
@@ -105,9 +105,12 @@ def test_cli_runs_agent_layer_and_records_flags(tmp_path, monkeypatch):
     # and section 5 LLM review with per-candidate status, adjusted criteria, rationale, narrative.
     md = out_md.read_text()
     assert "- **LLM Review**: backend=`fake`, model=`fake-model-7b`, status=`partial`" in md
-    assert "**Leading Candidate LLM Narrative (HEXA)**: review narrative for HEXA" in md
+    assert "**Leading Candidate LLM Narrative (HEXA)**: review narrative for HEXA." in md
     assert "## 5. LLM review (fake-model-7b, partial)" in md
     assert "- **Reviewed genes**: HEXA" in md
+    # R11 (1): <outdir>/llm-trace.jsonl is written next to the outputs
+    trace_file = tmp_path / "llm-trace.jsonl"
+    assert trace_file.exists() and trace_file.stat().st_size > 0
     assert "- **Status**: `ok`" in md
     assert "`PVS1` -> `met` (`strong`): nmd_escape per the pack" in md
     assert "- **Rationale**: downgrade per nmd_escape" in md
@@ -208,11 +211,11 @@ def test_cli_expansion_led_hd2_reviews_leading_expansion_and_renders_section_1_n
     assert lead["genotypes"] == "18/46"
     assert lead["agent_status"] == "ok"
     assert lead["adjusted_by_agent"] == []
-    assert lead["agent_narrative"] == "review narrative for HTT"
-    assert data["agent_narrative"] == "review narrative for HTT"
+    assert lead["agent_narrative"] == "review narrative for HTT."
+    assert data["agent_narrative"] == "review narrative for HTT."
     assert data["expansions"][0]["gene"] == "HTT"
     assert data["expansions"][0]["agent_status"] == "ok"
-    assert data["expansions"][0]["agent_narrative"] == "review narrative for HTT"
+    assert data["expansions"][0]["agent_narrative"] == "review narrative for HTT."
     assert data["llm"]["reviewed"] == ["HTT"]
     assert data["llm"]["statuses"]["HTT"] == "ok"
 

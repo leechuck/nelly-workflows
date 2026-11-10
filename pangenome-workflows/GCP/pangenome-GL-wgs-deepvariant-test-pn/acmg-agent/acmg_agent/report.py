@@ -191,6 +191,11 @@ def render_markdown(data: dict) -> str:
         or "leading candidate"
     )
 
+    sample_str = str(data.get("sample") or "proband").strip() or "proband"
+    patient_id_str = str(data.get("patient_id") or "").strip() or sample_str
+    lines.append(
+        f"- **Patient ID**: {patient_id_str} (VCF sample: {sample_str})"
+    )
     lines.append(
         f"- **LLM Review**: backend=`{llm_backend}`, model=`{llm_model}`, status=`{llm_status}`"
     )
@@ -198,6 +203,12 @@ def render_markdown(data: dict) -> str:
         lines.append(
             f"> **NOTE — Deterministic-only report (`llm.status={llm_status}`)**: "
             f"Leading candidate (**{lead_gene}**) was NOT reviewed by an LLM."
+        )
+    elif lead_agent_status == "ok_truncated":
+        lines.append(
+            f"> **NOTE — Narrative truncated (`agent_status=ok_truncated`)**: "
+            f"Leading candidate (**{lead_gene}**) criteria and rationale were reviewed by the LLM, "
+            f"but the automated narrative summary was truncated at the token limit after retry."
         )
     elif lead_agent_status != "ok" or llm_status in ("partial", "timeout", "failed", "rejected"):
         if lead_agent_status != "ok":
@@ -230,7 +241,14 @@ def render_markdown(data: dict) -> str:
         (lead.get("agent_rationale") if isinstance(lead, dict) else None)
         or (featured_snv.get("agent_rationale") if (lead is None and featured_snv) else None)
     )
-    if lead_narrative:
+    if lead_agent_status == "ok_truncated":
+        lines.append(
+            f"**Leading Candidate LLM Narrative ({lead_gene}) [status: `ok_truncated`]**: "
+            f"_Automated narrative was truncated at the token limit after retry (`agent_status=ok_truncated`); "
+            f"complete reviewer rationale:_ {lead_rationale or '—'}"
+        )
+        lines.append("")
+    elif lead_narrative:
         lines.append(f"**Leading Candidate LLM Narrative ({lead_gene})**: {lead_narrative}")
         lines.append("")
     elif lead_agent_status == "ok" and lead_rationale:
@@ -339,7 +357,13 @@ def render_markdown(data: dict) -> str:
             else:
                 lines.append("- **Adjusted criteria**: none")
             lines.append(f"- **Rationale**: {c.get('agent_rationale') or '—'}")
-            lines.append(f"- **Narrative**: {c.get('agent_narrative') or '—'}")
+            if c_status == "ok_truncated":
+                lines.append(
+                    f"- **Narrative**: _[Truncated at token limit after retry (`status=ok_truncated`); "
+                    f"refer to complete rationale above.]_ {c.get('agent_narrative') or '—'}"
+                )
+            else:
+                lines.append(f"- **Narrative**: {c.get('agent_narrative') or '—'}")
             lines.append("")
 
     if data.get("errors"):

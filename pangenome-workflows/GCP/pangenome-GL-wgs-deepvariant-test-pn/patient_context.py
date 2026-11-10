@@ -124,11 +124,20 @@ def parse_patient_context(
                 "Genoor or provide the workflow hpo_terms input"
             )
 
+    raw_identifier = patient.get("identifier")
+    if raw_identifier is None or (isinstance(raw_identifier, str) and not raw_identifier.strip()):
+        raw_identifier = document.get("identifier")
+    if isinstance(raw_identifier, (str, int, float)) and not isinstance(raw_identifier, bool):
+        patient_identifier = str(raw_identifier).strip()
+    else:
+        patient_identifier = ""
+
     return {
         "phenotype_labels": ";".join(labels),
         "hpo_terms": ",".join(hpo_terms),
         "expansionhunter_sex": expansionhunter_sex,
         "exomiser_sex": expansionhunter_sex.upper(),
+        "patient_identifier": patient_identifier,
     }
 
 
@@ -138,6 +147,7 @@ def write_outputs(context: dict[str, str], output_dir: Path = Path(".")) -> None
         "hpo_terms.txt": context["hpo_terms"],
         "expansionhunter_sex.txt": context["expansionhunter_sex"],
         "exomiser_sex.txt": context["exomiser_sex"],
+        "patient_identifier.txt": context.get("patient_identifier", ""),
     }
     for name, value in outputs.items():
         (output_dir / name).write_text(value, encoding="utf-8")

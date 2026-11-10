@@ -290,8 +290,15 @@ def cmd_assess(args: argparse.Namespace) -> int:
             e["agent_narrative"] = None
 
         if not args.no_llm:
-            if getattr(args, "sample", None):
-                os.environ.setdefault("ACMG_SAMPLE", str(args.sample))
+            raw_pid = str(getattr(args, "patient_id", "") or os.environ.get("ACMG_PATIENT_ID", "")).strip()
+            sample_aff = raw_pid or str(getattr(args, "sample", "") or "sample")
+            os.environ.setdefault("ACMG_SAMPLE", sample_aff)
+            trace_file = Path(args.output_json).resolve().parent / "llm-trace.jsonl"
+            try:
+                if trace_file.exists():
+                    trace_file.unlink()
+            except OSError:
+                pass
             try:
                 backend = select_backend_from_env()
             except Exception as exc:
@@ -299,6 +306,10 @@ def cmd_assess(args: argparse.Namespace) -> int:
                 llm_status = "failed"
                 errors.append(f"LLM backend selection failed: {exc}")
             if backend is not None:
+                try:
+                    backend.trace_path = str(trace_file)
+                except Exception:
+                    pass
                 llm_info["backend"] = str(getattr(backend, "backend_name", "llama"))
                 llm_info["model"] = getattr(backend, "model_name", None)
                 for e in expansions:
@@ -340,7 +351,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
                 adjusted = list(agent.get("adjusted") or [])
                 agent_status = str(agent.get("agent_status") or "skipped")
                 agent_rationale = agent.get("agent_rationale")
-                agent_narrative = agent.get("narrative") if agent_status == "ok" else None
+                agent_narrative = agent.get("narrative") if agent_status in ("ok", "ok_truncated") else None
                 agent_wall_seconds = agent.get("wall_seconds")
             else:
                 final_criteria = det
@@ -504,9 +515,9 @@ def cmd_assess(args: argparse.Namespace) -> int:
             st = str(item.get("agent_status") or "not_reviewed")
             if not g:
                 continue
-            if g not in status_map or st == "ok":
+            if g not in status_map or st in ("ok", "ok_truncated"):
                 status_map[g] = st
-            if st == "ok":
+            if st in ("ok", "ok_truncated"):
                 if g not in reviewed_genes:
                     reviewed_genes.append(g)
         for item in ordered_items_for_llm:
@@ -525,10 +536,13 @@ def cmd_assess(args: argparse.Namespace) -> int:
         )
         phenotype = (args.phenotype or "")
         pipeline_version = os.environ.get("ACMG_PIPELINE_VERSION") or "nelly-workflows modernise-2026-11"
-        image_tag = os.environ.get("ACMG_IMAGE_TAG") or "nelly-acmg-agent:v6"
+        image_tag = os.environ.get("ACMG_IMAGE_TAG") or "nelly-acmg-agent:v7"
+        raw_patient_id = str(getattr(args, "patient_id", "") or os.environ.get("ACMG_PATIENT_ID", "")).strip()
+        patient_id = raw_patient_id or str(args.sample or "proband")
         data = {
             "schema_version": 1,
             "sample": args.sample,
+            "patient_id": patient_id,
             "pipeline_version": pipeline_version,
             "image_tag": image_tag,
             "strchive_used": strchive_used,
@@ -546,9 +560,12 @@ def cmd_assess(args: argparse.Namespace) -> int:
         }
     except Exception as exc:
         errors.append(f"Unexpected error during assessment: {exc}")
+        fallback_sample = getattr(args, "sample", "proband")
+        fallback_pid = str(getattr(args, "patient_id", "") or os.environ.get("ACMG_PATIENT_ID", "")).strip() or fallback_sample
         data = {
             "schema_version": 1,
-            "sample": getattr(args, "sample", "proband"),
+            "sample": fallback_sample,
+            "patient_id": fallback_pid,
             "llm": llm_info,
             "leading_candidate": None,
             "near_tie_alternatives": [],
@@ -606,6 +623,7 @@ def build_parser() -> argparse.ArgumentParser:
     ass.add_argument("--from-vcf", action="store_true", help="Evaluate all variants in --vep-vcf without Exomiser TSVs")
     ass.add_argument("--no-llm", action="store_true", help="Run deterministic ACMG engine only")
     ass.add_argument("--sample", default="proband")
+    ass.add_argument("--patient-id", default="", help="Patient identifier from metadata (falls back to --sample when empty)")
     ass.add_argument("--hpo-terms", default="", help="HPO term IDs (comma or whitespace separated), free-text phenotype labels go through env ACMG_PHENOTYPE")
     # Phenotype labels arrive via the ACMG_PHENOTYPE env var (CWL
     # EnvVarRequirement), keeping shell/hostile characters out of argv.
