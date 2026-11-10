@@ -145,9 +145,25 @@ def list_singularity_steps() -> list[tuple[str, str, str, int]]:
             or "/apptainer " in args
         )
 
+    # Restrict to descendants of our parent run.sh (if ppid > 1) so shared nodes
+    # or overlapping runs never cross-contaminate step-resources.md
+    parent_pid = os.getppid()
+    allowed_pids: set[int] | None = None
+    if parent_pid > 1 and parent_pid in procs:
+        allowed_pids = set()
+        q = [parent_pid]
+        while q:
+            cur = q.pop(0)
+            if cur in allowed_pids:
+                continue
+            allowed_pids.add(cur)
+            q.extend(children.get(cur, []))
+
     # Top-level singularity/apptainer roots (parent is not itself a singularity wrapper)
     roots: list[int] = []
     for pid, (ppid, _rss, args) in procs.items():
+        if allowed_pids is not None and pid not in allowed_pids:
+            continue
         if is_sing_proc(args):
             parent_args = procs.get(ppid, (0, 0, ""))[2]
             if not is_sing_proc(parent_args):
