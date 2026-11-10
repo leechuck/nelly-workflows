@@ -1,29 +1,35 @@
-"""Clinical PDF report renderer (HTML + CSS -> PDF via WeasyPrint, design §11).
+"""Clinical PDF report renderer (HTML + CSS -> PDF via WeasyPrint, design §11 + R9).
 
 Main body presents the deterministic ACMG/AMP 2015 + ClinGen SVI evaluation:
-  1. Header (patient/sample ID, sex, HPO terms + phenotype labels, GRCh38,
-     pipeline/image versions, report date)
-  2. Clinical Conclusion (leading finding, classification + points + combining
-     rule, supported vs inconclusive decision, near-tie differential)
-  3. ACMG/AMP 28-Criteria Evaluation Tables for the leading finding and every
-     Pathogenic / Likely pathogenic candidate, grouped into Pathogenic (16) and
-     Benign (12) criteria, showing decision status (Met + applied strength,
-     Not met, Not evaluable + reason, Not applicable for retired PP5/BP6),
-     evidence value/rationale, evidence source, point tally, and combining-rule
-     result
-  4. Ranked SNV / Indel Candidates Table
-  5. Short Tandem Repeat Expansions (pathogenic/intermediate first, normal loci
-     compact)
-  Appendix A. Automated Reviewer Commentary (model, status, per-candidate
-     adjustments + reasons, rationale, narrative — explicitly labelled as
-     explanatory commentary, not the basis of the clinical decision)
-  Appendix B. Methods, Data Versions, Limitations & Run Identifiers
+  - Header block (unnumbered: patient/sample ID, sex, HPO terms + phenotype labels,
+    GRCh38, pipeline/image versions from env, report date)
+  - 1. Clinical Conclusion (leading finding, classification + points + combining
+    rule, supported vs inconclusive decision, structured summary, near-tie differential)
+  - 2. ACMG/AMP 28-Criteria Evaluation Table for the leading finding ONLY, grouped
+    into Pathogenic (16) and Benign (12) criteria, showing decision status (Met +
+    applied strength, Not met, Not evaluable + reason, Not applicable for retired
+    PP5/BP6), evidence value/rationale, evidence source, point tally, and
+    combining-rule result
+  - 3. Ranked SNV / Indel Candidates Table + Compact P/LP Table for additional
+    Pathogenic / Likely pathogenic candidates (met criteria with strength + points,
+    not-evaluable criteria, final class/points)
+  - 4. Short Tandem Repeat Expansions (pathogenic/intermediate first, normal loci
+    compact)
+  - Appendix A. Automated Reviewer Commentary (summary status table with gene,
+    status, adjusted criteria, wall time first, followed by per-candidate rationale
+    and narrative — explicitly labelled as explanatory commentary, not the basis
+    of the clinical decision)
+  - Appendix B. Methods, Data Versions, Limitations & Run Identifiers
+  - Appendix C. Full 28-Criteria Tables for Additional Pathogenic / Likely
+    Pathogenic Candidates (when present)
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 import html
+import os
 from pathlib import Path
+import re
 import sys
 from typing import Any
 
@@ -57,6 +63,29 @@ def _esc(val: Any, default: str = "—") -> str:
     return html.escape(str(val))
 
 
+def _md_inline_to_html(val: Any, default: str = "—") -> str:
+    """Escape HTML and convert inline Markdown (**bold**, `code`) to HTML tags."""
+    if val is None or val == "":
+        return default
+    escaped = html.escape(str(val))
+    escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    return escaped
+
+
+def _format_non_bottlenecked_af(ev: dict) -> str:
+    """Format non-bottlenecked AF: numeric only when > 0, else 'not observed in gnomAD v4 (exomes/genomes)'."""
+    af_val = ev.get("max_af")
+    if isinstance(af_val, (int, float)) and af_val > 0.0:
+        af_str = f"{af_val:.2e} ({ev.get('max_af_source') or 'gnomAD v4'})"
+    else:
+        af_str = "not observed in gnomAD v4 (exomes/genomes)"
+    any_pop = ev.get("max_af_any_pop")
+    if isinstance(any_pop, (int, float)) and any_pop > 0.0 and (af_val is None or any_pop > af_val):
+        af_str += f" [founder pop {ev.get('max_af_any_pop_pop') or 'max'}: {any_pop:.4f}]"
+    return af_str
+
+
 def _criterion_source(code: str, ev: dict) -> str:
     code_u = (code or "").upper()
     if code_u == "PVS1":
@@ -64,10 +93,11 @@ def _criterion_source(code: str, ev: dict) -> str:
     if code_u in ("PS1", "PM5"):
         return "ClinVar GRCh38 VCF + VEP 116 CSQ"
     if code_u in ("PM2", "BA1", "BS1"):
+        af_val = ev.get("max_af")
         src = ev.get("max_af_source")
-        if src:
+        if isinstance(af_val, (int, float)) and af_val > 0.0 and src:
             return f"gnomAD v4 ({src})"
-        return "VEP 116 gnomAD / slivar / Exomiser"
+        return "gnomAD v4 (exomes/genomes)"
     if code_u == "BS2":
         return "slivar gnomAD v4 (gnomad_nhomalt)"
     if code_u == "PM1":
@@ -95,15 +125,23 @@ def _criterion_source(code: str, ev: dict) -> str:
     return "ACMG deterministic engine"
 
 
+def _criterion_points(code: str, strength: str | None) -> int:
+    is_benign = (code or "").upper().startswith("B")
+    direction = "B" if is_benign else "P"
+    return STRENGTH_POINTS.get((direction, strength or ""), 0)
+
+
 def _decision_label(status: str, strength: str | None, code: str) -> tuple[str, str, str]:
     """Return (decision_badge_html, applied_strength_str, css_row_class)."""
     st = (status or "").lower()
-    is_benign = (code or "").upper().startswith("B")
-    direction = "B" if is_benign else "P"
     if st == "met":
-        pts = STRENGTH_POINTS.get((direction, strength or ""), 0)
+        pts = _criterion_points(code, strength)
         pts_str = f"+{pts}" if pts > 0 else str(pts)
-        str_label = f"{strength or 'met'} ({pts_str} pt{'s' if abs(pts) != 1 else ''})" if strength != "stand_alone" else "stand_alone"
+        str_label = (
+            f"{strength or 'met'} ({pts_str} pt{'s' if abs(pts) != 1 else ''})"
+            if strength != "stand_alone"
+            else "stand_alone"
+        )
         badge = '<span class="badge badge-met">Decision made: Met</span>'
         return badge, _esc(str_label), "row-met"
     if st == "not_met":
@@ -164,32 +202,30 @@ def _render_candidate_criteria_section(cand: dict, is_leading: bool = False) -> 
     path_rows = _render_criteria_group_rows(by_code, PATHOGENIC_CODES, ev)
     benign_rows = _render_criteria_group_rows(by_code, BENIGN_CODES, ev)
 
-    role_tag = "Leading SNV/Indel Candidate" if is_leading else "Pathogenic / Likely Pathogenic Candidate"
+    role_tag = "Leading SNV/Indel Candidate" if is_leading else "Additional Pathogenic / Likely Pathogenic Candidate"
     conflict_note = (
         ' <span class="badge badge-warn">Pathogenic/Benign Evidence Conflict</span>'
         if conflict
         else ""
     )
 
-    af_val = ev.get("max_af")
-    af_str = f"{af_val:.2e} ({ev.get('max_af_source') or 'gnomAD'})" if isinstance(af_val, (int, float)) else "absent"
-    if isinstance(ev.get("max_af_any_pop"), (int, float)) and (af_val is None or ev["max_af_any_pop"] > af_val):
-        af_str += f" [founder pop {ev.get('max_af_any_pop_pop') or 'max'}: {ev['max_af_any_pop']:.4f}]"
+    af_str = _format_non_bottlenecked_af(ev)
 
     return f"""
     <div class="criteria-card">
-      <h3>{role_tag}: {gene} — <code>{variant}</code></h3>
-      <div class="cand-meta">
-        <span><strong>HGVS:</strong> <code>{hgvs}</code></span>
-        <span><strong>Zygosity / MOI:</strong> <code>{zyg}</code> / <code>{moi}</code></span>
-        <span><strong>Disease:</strong> {disease}</span>
-        <span><strong>Non-bottlenecked AF:</strong> <code>{_esc(af_str)}</code></span>
-        <span><strong>Point Tally:</strong> <strong>{_esc(pts_str)} pts</strong></span>
-        <span><strong>Richards Combining Rule:</strong> <strong>{rb_clf}</strong></span>
-        <span><strong>Final Classification:</strong> <strong class="clf-label">{clf}</strong>{conflict_note}</span>
+      <div class="cand-header-group">
+        <h3>{role_tag}: {gene} — <code>{variant}</code></h3>
+        <div class="cand-meta">
+          <span><strong>HGVS:</strong> <code>{hgvs}</code></span>
+          <span><strong>Zygosity / MOI:</strong> <code>{zyg}</code> / <code>{moi}</code></span>
+          <span><strong>Disease:</strong> {disease}</span>
+          <span><strong>Non-bottlenecked AF:</strong> <code>{_esc(af_str)}</code></span>
+          <span><strong>Point Tally:</strong> <strong>{_esc(pts_str)} pts</strong></span>
+          <span><strong>Richards Combining Rule:</strong> <strong>{rb_clf}</strong></span>
+          <span><strong>Final Classification:</strong> <strong class="clf-label">{clf}</strong>{conflict_note}</span>
+        </div>
+        <h4>Pathogenic Criteria (PVS1, PS1–PS4, PM1–PM6, PP1–PP5)</h4>
       </div>
-
-      <h4>Pathogenic Criteria (PVS1, PS1–PS4, PM1–PM6, PP1–PP5)</h4>
       <table class="criteria-table">
         <thead>
           <tr>
@@ -224,6 +260,100 @@ def _render_candidate_criteria_section(cand: dict, is_leading: bool = False) -> 
     """
 
 
+def _build_structured_summary_html(data: dict, lead: dict | None, near_ties: list[dict], cands: list[dict]) -> str:
+    """Render the Section 1 Summary from structured fields (or convert inline Markdown if agent narrative)."""
+    if isinstance(lead, dict) and lead.get("agent_narrative"):
+        return _md_inline_to_html(lead["agent_narrative"])
+    if isinstance(lead, dict) and lead.get("kind") == "expansion":
+        return (
+            f"Leading candidate is a pathogenic-range short tandem repeat expansion in "
+            f"<strong>{_esc(lead.get('gene'))}</strong> (alleles <code>{_esc(lead.get('genotypes'))}</code>, "
+            f"95% CI <code>{_esc(lead.get('ci'))}</code>; normal &le; <code>{_esc(lead.get('normal_max'))}</code>, "
+            f"pathogenic &ge; <code>{_esc(lead.get('pathogenic_min'))}</code>) associated with "
+            f"{_esc(lead.get('disease'))} (<code>{_esc(lead.get('moi'))}</code>)."
+        )
+    if isinstance(lead, dict):
+        lead_snv = next(
+            (c for c in cands if c.get("gene") == lead.get("gene") and c.get("variant") == lead.get("variant")),
+            None,
+        )
+        met_parts: list[str] = []
+        if lead_snv:
+            for cr in (lead_snv.get("criteria") or []):
+                if isinstance(cr, dict) and cr.get("status") == "met":
+                    code = _esc(cr.get("code"))
+                    st = _esc(cr.get("strength") or "")
+                    met_parts.append(f"<code>{code}</code> ({st})" if st != "—" else f"<code>{code}</code>")
+        met_str = ", ".join(met_parts) if met_parts else "none"
+        pts = lead.get("points")
+        pts_str = f"{pts:+d} points" if isinstance(pts, int) else _esc(pts, "0 points")
+        summary = (
+            f"Leading candidate is <strong>{_esc(lead.get('gene'))}</strong> "
+            f"<code>{_esc(lead.get('variant'))}</code> (<code>{_esc(lead.get('hgvs'))}</code>, "
+            f"<code>{_esc(lead.get('zygosity'))}</code>, MOI <code>{_esc(lead.get('moi'))}</code>), "
+            f"classified as <strong>{_esc(lead.get('classification'))}</strong> "
+            f"({_esc(pts_str)}; combining rule: {_esc(lead.get('rule_based_class'))}; "
+            f"met criteria: {met_str}) for {_esc(lead.get('disease'))}."
+        )
+        if near_ties:
+            alt_str = ", ".join(
+                f"<strong>{_esc(t.get('gene'))}</strong> <code>{_esc(t.get('variant'))}</code> "
+                f"({_esc(t.get('classification'))}, {_esc(t.get('points'))} pts)"
+                for t in near_ties
+            )
+            summary += f" Near-tie alternatives within tie margin: {alt_str}."
+        return summary
+    return _md_inline_to_html(data.get("narrative") or "No pathogenic or likely pathogenic candidate was identified.")
+
+
+def _render_compact_plp_table(other_plp_cands: list[dict]) -> str:
+    """Render compact summary table for non-leading P/LP candidates in Section 3."""
+    rows: list[str] = []
+    for c in other_plp_cands:
+        met_items: list[str] = []
+        ne_items: list[str] = []
+        for cr in (c.get("criteria") or []):
+            if not isinstance(cr, dict):
+                continue
+            code = str(cr.get("code") or "")
+            status = str(cr.get("status") or "")
+            strength = cr.get("strength")
+            if status == "met":
+                pts = _criterion_points(code, strength)
+                pts_str = f"{pts:+d}" if pts != 0 else "0"
+                met_items.append(f"<code>{_esc(code)}</code> ({_esc(strength)}, {pts_str} pt{'s' if abs(pts) != 1 else ''})")
+            elif status == "not_evaluable":
+                ne_items.append(f"<code>{_esc(code)}</code>")
+        pts = c.get("points")
+        pts_str = f"{pts:+d} pts" if isinstance(pts, int) else _esc(pts, "0 pts")
+        rows.append(
+            f'<tr class="row-met">'
+            f"<td><strong>{_esc(c.get('gene'))}</strong><br/><code>{_esc(c.get('variant'))}</code><br/><code>{_esc(c.get('hgvs'))}</code></td>"
+            f"<td><code>{_esc(c.get('zygosity'))}</code> / <code>{_esc(c.get('moi'))}</code><br/>{_esc(c.get('disease'))}</td>"
+            f"<td>{', '.join(met_items) if met_items else '—'}</td>"
+            f"<td>{', '.join(ne_items) if ne_items else '—'}</td>"
+            f"<td><strong>{_esc(c.get('classification'))}</strong> ({_esc(pts_str)}; rule: {_esc(c.get('rule_based_class'))})</td>"
+            f"</tr>"
+        )
+    return f"""
+    <h3>Additional Pathogenic / Likely Pathogenic Candidates (Compact Summary — Full 28-Row Tables in Appendix C)</h3>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 24%;">Gene &amp; Variant (HGVS)</th>
+          <th style="width: 18%;">Zyg / MOI / Disease</th>
+          <th style="width: 26%;">Met Criteria (Strength &amp; Points)</th>
+          <th style="width: 16%;">Not-Evaluable Criteria</th>
+          <th style="width: 16%;">Final Class &amp; Points</th>
+        </tr>
+      </thead>
+      <tbody>
+        {"".join(rows)}
+      </tbody>
+    </table>
+    """
+
+
 def render_pdf_html(data: dict) -> str:
     """Render the clinical report HTML+CSS document from assessment JSON data."""
     sample = _esc(data.get("sample") or "proband")
@@ -232,6 +362,17 @@ def render_pdf_html(data: dict) -> str:
     hpo_str = ", ".join(str(t) for t in hpo_list) if hpo_list else "none provided"
     phenotype_labels = _esc(data.get("phenotype") or "—")
     report_date = _esc(data.get("report_date") or datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+
+    pipeline_version = _esc(
+        data.get("pipeline_version")
+        or os.environ.get("ACMG_PIPELINE_VERSION")
+        or "nelly-workflows modernise-2026-11"
+    )
+    image_tag = _esc(
+        data.get("image_tag")
+        or os.environ.get("ACMG_IMAGE_TAG")
+        or "nelly-acmg-agent:v5"
+    )
 
     lead = data.get("leading_candidate")
     near_ties = data.get("near_tie_alternatives") or []
@@ -252,7 +393,7 @@ def render_pdf_html(data: dict) -> str:
     conclusion_status = "SUPPORTED" if is_supported else "INCONCLUSIVE"
     conclusion_badge_cls = "badge-met" if is_supported else "badge-warn"
 
-    # Section 2: Conclusion block
+    # Section 1: Conclusion block
     if isinstance(lead, dict) and lead.get("kind") == "expansion":
         lead_summary_html = f"""
         <table class="kv-table">
@@ -307,7 +448,8 @@ def render_pdf_html(data: dict) -> str:
             "No pathogenic or likely pathogenic candidate was identified.</p>"
         )
 
-    diff_html = ""
+    summary_html = _build_structured_summary_html(data, lead, near_ties, cands)
+
     if near_ties:
         ties_str = ", ".join(
             f"<strong>{_esc(t.get('gene'))}</strong> (<code>{_esc(t.get('variant'))}</code>, {_esc(t.get('classification'))}, {_esc(t.get('points'))} pts)"
@@ -317,9 +459,7 @@ def render_pdf_html(data: dict) -> str:
     else:
         diff_html = "<p><strong>Near-tie differential candidates:</strong> none within tie margin.</p>"
 
-    # Section 3: 28-criteria tables for leading SNV (or top SNV) + all P/LP SNV candidates
-    criteria_sections: list[str] = []
-    shown_keys: set[tuple[str, str]] = set()
+    # Section 2: 28-criteria table ONLY for the leading SNV finding; other P/LP candidates go to Section 3 compact + Appendix C
     lead_snv = None
     if isinstance(lead, dict) and lead.get("kind") == "snv":
         lead_snv = next(
@@ -329,25 +469,23 @@ def render_pdf_html(data: dict) -> str:
     if lead_snv is None and cands:
         lead_snv = cands[0]
 
+    shown_keys: set[tuple[str, str]] = set()
     if lead_snv is not None:
-        criteria_sections.append(_render_candidate_criteria_section(lead_snv, is_leading=True))
+        criteria_html = _render_candidate_criteria_section(lead_snv, is_leading=True)
         shown_keys.add((str(lead_snv.get("gene")), str(lead_snv.get("variant"))))
+    else:
+        criteria_html = "<p><em>No SNV/indel candidates were evaluated against the 28 ACMG/AMP criteria.</em></p>"
 
+    other_plp_cands: list[dict] = []
     for c in cands:
         key = (str(c.get("gene")), str(c.get("variant")))
         if key in shown_keys:
             continue
         if c.get("classification") in ("Pathogenic", "Likely pathogenic"):
-            criteria_sections.append(_render_candidate_criteria_section(c, is_leading=False))
+            other_plp_cands.append(c)
             shown_keys.add(key)
 
-    criteria_html = (
-        "\n".join(criteria_sections)
-        if criteria_sections
-        else "<p><em>No SNV/indel candidates were evaluated against the 28 ACMG/AMP criteria.</em></p>"
-    )
-
-    # Section 4: Ranked candidates table
+    # Section 3: Ranked candidates table + compact P/LP table for additional P/LP candidates
     if cands:
         cand_rows: list[str] = []
         for idx, c in enumerate(cands, 1):
@@ -391,10 +529,12 @@ def render_pdf_html(data: dict) -> str:
           </tbody>
         </table>
         """
+        if other_plp_cands:
+            ranked_table_html += "\n" + _render_compact_plp_table(other_plp_cands)
     else:
         ranked_table_html = "<p><em>No SNV/indel candidates evaluated.</em></p>"
 
-    # Section 5: Repeat expansions (pathogenic/intermediate first, normal compact)
+    # Section 4: Repeat expansions (pathogenic/intermediate first, normal compact)
     abnormal_exp = [e for e in expansions if e.get("status") in ("pathogenic_range", "intermediate_or_carrier")]
     normal_exp = [e for e in expansions if e.get("status") not in ("pathogenic_range", "intermediate_or_carrier")]
 
@@ -449,27 +589,43 @@ def render_pdf_html(data: dict) -> str:
         )
     expansions_html = "\n".join(exp_parts)
 
-    # Appendix A: Automated reviewer commentary
+    # Appendix A: Automated reviewer commentary — FIRST a summary table (gene, status, adjusted criteria, wall time), THEN rationale/narrative
     reviewed_genes = ", ".join(llm.get("reviewed") or []) or "none"
     unreviewed_genes = ", ".join(llm.get("unreviewed") or []) or "none"
+    appendix_a_summary_rows: list[str] = []
     appendix_a_cards: list[str] = []
 
     if isinstance(lead, dict) and lead.get("kind") == "expansion":
         exp_st = _esc(lead.get("agent_status") or "not_reviewed")
-        appendix_a_cards.append(f"""
-        <div class="llm-card">
-          <h4>{_esc(lead.get("gene"))} (Repeat Expansion <code>{_esc(lead.get("genotypes"))}</code>) — Status: <code>{exp_st}</code></h4>
-          <ul>
-            <li><strong>Review status:</strong> <code>{exp_st}</code></li>
-            <li><strong>Adjusted ACMG criteria:</strong> none (repeat expansions are evaluated against locus thresholds, not SNV/indel ACMG criteria)</li>
-            <li><strong>Reviewer rationale:</strong> {_esc(lead.get("agent_rationale"))}</li>
-            <li><strong>Reviewer narrative:</strong> {_esc(lead.get("agent_narrative"))}</li>
-          </ul>
-        </div>
-        """)
+        exp_wt = lead.get("agent_wall_seconds")
+        exp_wt_str = f"{exp_wt:.2f}s" if isinstance(exp_wt, (int, float)) else "—"
+        appendix_a_summary_rows.append(
+            f"<tr>"
+            f"<td><strong>{_esc(lead.get('gene'))}</strong></td>"
+            f"<td>Repeat Expansion <code>{_esc(lead.get('genotypes'))}</code></td>"
+            f"<td><code>{exp_st}</code></td>"
+            f"<td>none (locus threshold)</td>"
+            f"<td><code>{_esc(exp_wt_str)}</code></td>"
+            f"</tr>"
+        )
+        appendix_a_Summary_has_details = bool(
+            lead.get("agent_rationale") or lead.get("agent_narrative")
+        )
+        if appendix_a_Summary_has_details or lead.get("agent_status") not in (None, "not_reviewed", "skipped"):
+            appendix_a_cards.append(f"""
+            <div class="llm-card">
+              <h4>{_esc(lead.get("gene"))} (Repeat Expansion <code>{_esc(lead.get("genotypes"))}</code>) — Status: <code>{exp_st}</code></h4>
+              <ul>
+                <li><strong>Reviewer rationale:</strong> {_md_inline_to_html(lead.get("agent_rationale"))}</li>
+                <li><strong>Reviewer narrative:</strong> {_md_inline_to_html(lead.get("agent_narrative"))}</li>
+              </ul>
+            </div>
+            """)
 
     for c in cands:
         cst = _esc(c.get("agent_status") or "not_reviewed")
+        wt = c.get("agent_wall_seconds")
+        wt_str = f"{wt:.2f}s" if isinstance(wt, (int, float)) else "—"
         adj_items = c.get("llm_adjustments") or [
             {
                 "code": cr.get("code"),
@@ -486,25 +642,78 @@ def render_pdf_html(data: dict) -> str:
                 f"(<code>{_esc(a.get('strength'))}</code>): {_esc(a.get('reason') or a.get('rationale'))}"
                 for a in adj_items
             )
+            adj_short = ", ".join(
+                f"<code>{_esc(a.get('code'))}</code> ({_esc(a.get('strength'))})"
+                for a in adj_items
+            )
         else:
             adj_str = "none"
-        appendix_a_cards.append(f"""
-        <div class="llm-card">
-          <h4>{_esc(c.get("gene"))} (<code>{_esc(c.get("variant"))}</code>) — Status: <code>{cst}</code></h4>
-          <ul>
-            <li><strong>Review status:</strong> <code>{cst}</code></li>
-            <li><strong>Adjusted criteria:</strong> {adj_str}</li>
-            <li><strong>Reviewer rationale:</strong> {_esc(c.get("agent_rationale"))}</li>
-            <li><strong>Reviewer narrative:</strong> {_esc(c.get("agent_narrative"))}</li>
-          </ul>
-        </div>
-        """)
+            adj_short = "none"
+        appendix_a_summary_rows.append(
+            f"<tr>"
+            f"<td><strong>{_esc(c.get('gene'))}</strong></td>"
+            f"<td><code>{_esc(c.get('variant'))}</code></td>"
+            f"<td><code>{cst}</code></td>"
+            f"<td>{adj_short}</td>"
+            f"<td><code>{_esc(wt_str)}</code></td>"
+            f"</tr>"
+        )
+        has_card_content = bool(
+            adj_items or c.get("agent_rationale") or c.get("agent_narrative")
+            or c.get("agent_status") not in (None, "not_reviewed", "skipped")
+        )
+        if has_card_content:
+            appendix_a_cards.append(f"""
+            <div class="llm-card">
+              <h4>{_esc(c.get("gene"))} (<code>{_esc(c.get("variant"))}</code>) — Status: <code>{cst}</code></h4>
+              <ul>
+                <li><strong>Adjusted criteria:</strong> {adj_str}</li>
+                <li><strong>Reviewer rationale:</strong> {_md_inline_to_html(c.get("agent_rationale"))}</li>
+                <li><strong>Reviewer narrative:</strong> {_md_inline_to_html(c.get("agent_narrative"))}</li>
+              </ul>
+            </div>
+            """)
 
-    appendix_a_body = (
-        "\n".join(appendix_a_cards)
-        if appendix_a_cards
-        else "<p><em>No candidates evaluated.</em></p>"
-    )
+    if appendix_a_summary_rows:
+        appendix_a_table = f"""
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width: 14%;">Gene</th>
+              <th style="width: 28%;">Variant / Repeat Locus</th>
+              <th style="width: 16%;">Review Status</th>
+              <th style="width: 28%;">Adjusted Criteria</th>
+              <th style="width: 14%;">Wall Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {"".join(appendix_a_summary_rows)}
+          </tbody>
+        </table>
+        """
+        if appendix_a_cards:
+            appendix_a_body = appendix_a_table + "\n" + "\n".join(appendix_a_cards)
+        else:
+            appendix_a_body = (
+                appendix_a_table
+                + "\n<p><em>No per-candidate LLM rationale or narrative text was generated (see Review Status column above).</em></p>"
+            )
+    else:
+        appendix_a_body = "<p><em>No candidates evaluated.</em></p>"
+
+    # Appendix C: Full 28-criteria tables for additional P/LP candidates
+    if other_plp_cands:
+        app_c_sections = "\n".join(
+            _render_candidate_criteria_section(c, is_leading=False) for c in other_plp_cands
+        )
+        appendix_c_html = f"""
+        <div class="appendix-break"></div>
+        <h2>Appendix C. Full 28-Criteria Tables for Additional Pathogenic / Likely Pathogenic Candidates</h2>
+        <p>Full 28-row ACMG/AMP 2015 + ClinGen SVI evaluations for additional Pathogenic and Likely pathogenic candidates summarized in Section 3.</p>
+        {app_c_sections}
+        """
+    else:
+        appendix_c_html = ""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -552,16 +761,22 @@ def render_pdf_html(data: dict) -> str:
       color: #0f2c59;
       border-bottom: 1px solid #cbd5e1;
       padding-bottom: 2px;
+      page-break-after: avoid;
+      break-after: avoid;
     }}
     h3 {{
       font-size: 9.5pt;
       margin: 8px 0 4px 0;
       color: #1e293b;
+      page-break-after: avoid;
+      break-after: avoid;
     }}
     h4 {{
       font-size: 8.5pt;
       margin: 6px 0 3px 0;
       color: #334155;
+      page-break-after: avoid;
+      break-after: avoid;
     }}
     p {{
       margin: 4px 0;
@@ -571,6 +786,10 @@ def render_pdf_html(data: dict) -> str:
       border-collapse: collapse;
       margin: 4px 0 8px 0;
       font-size: 7.8pt;
+    }}
+    tr {{
+      page-break-inside: avoid;
+      break-inside: avoid;
     }}
     .kv-table th, .kv-table td,
     .data-table th, .data-table td,
@@ -634,12 +853,22 @@ def render_pdf_html(data: dict) -> str:
       background-color: #991b1b;
       color: #ffffff;
     }}
+    .cand-header-group {{
+      page-break-inside: avoid;
+      break-inside: avoid;
+      page-break-after: avoid;
+      break-after: avoid;
+    }}
     .cand-meta {{
       background-color: #f8fafc;
       border: 1px solid #cbd5e1;
       padding: 4px 6px;
       margin-bottom: 6px;
       font-size: 8pt;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      page-break-after: avoid;
+      break-after: avoid;
     }}
     .cand-meta span {{
       display: inline-block;
@@ -670,6 +899,8 @@ def render_pdf_html(data: dict) -> str:
       padding: 4px 8px;
       margin-bottom: 6px;
       background-color: #f8fafc;
+      page-break-inside: avoid;
+      break-inside: avoid;
     }}
     .llm-card ul {{
       margin: 3px 0;
@@ -679,7 +910,7 @@ def render_pdf_html(data: dict) -> str:
 </head>
 <body>
 
-  <h1>1. Clinical Variant Interpretation Report (ACMG/AMP 2015 + ClinGen SVI)</h1>
+  <h1>Clinical Variant Interpretation Report (ACMG/AMP 2015 + ClinGen SVI)</h1>
   <table class="kv-table">
     <tr>
       <th>Patient / Sample ID</th>
@@ -701,23 +932,23 @@ def render_pdf_html(data: dict) -> str:
     </tr>
     <tr>
       <th>Pipeline / Image</th>
-      <td colspan="3"><code>nelly-pangenome-vg</code> (<code>vg 1.78.0</code>, <code>DeepVariant 1.10.0</code>, <code>VEP 116</code>, <code>Exomiser 2512</code>, <code>nelly-acmg-agent:v4</code>)</td>
+      <td colspan="3"><code>{pipeline_version}</code> (step image: <code>{image_tag}</code>)</td>
     </tr>
   </table>
 
-  <h2>2. Clinical Conclusion</h2>
+  <h2>1. Clinical Conclusion</h2>
   {lead_summary_html}
-  <p><strong>Summary:</strong> {_esc(data.get("narrative"))}</p>
+  <p><strong>Summary:</strong> {summary_html}</p>
   {diff_html}
 
-  <h2>3. ACMG/AMP 28-Criteria Evaluation (Main Evidence Table)</h2>
-  <p>Each of the 28 ACMG/AMP 2015 criteria is evaluated deterministically with ClinGen SVI calibrations. Every row states whether a decision was made (<strong>Met</strong> with applied strength, or <strong>Not met</strong>) or not made (<strong>Not evaluable</strong> with reason, or <strong>Not applicable</strong> for retired criteria PP5/BP6), together with the underlying evidence value, source, Tavtigian 2020 point tally, and Richards 2015 combining-rule classification.</p>
+  <h2>2. ACMG/AMP 28-Criteria Evaluation (Leading Finding)</h2>
+  <p>Each of the 28 ACMG/AMP 2015 criteria is evaluated deterministically with ClinGen SVI calibrations for the leading finding. Every row states whether a decision was made (<strong>Met</strong> with applied strength, or <strong>Not met</strong>) or not made (<strong>Not evaluable</strong> with reason, or <strong>Not applicable</strong> for retired criteria PP5/BP6), together with the underlying evidence value, source, Tavtigian 2020 point tally, and Richards 2015 combining-rule classification.</p>
   {criteria_html}
 
-  <h2>4. Ranked SNV / Indel Candidates</h2>
+  <h2>3. Ranked SNV / Indel Candidates</h2>
   {ranked_table_html}
 
-  <h2>5. Short Tandem Repeat Expansions (ExpansionHunter + STRchive)</h2>
+  <h2>4. Short Tandem Repeat Expansions (ExpansionHunter + STRchive)</h2>
   {expansions_html}
 
   <div class="appendix-break"></div>
@@ -740,7 +971,7 @@ def render_pdf_html(data: dict) -> str:
     </tr>
     <tr>
       <th>Data &amp; Tool Versions</th>
-      <td colspan="3">Reference: <code>GRCh38</code>; Alignment/Calling: <code>vg giraffe 1.78.0</code>, <code>DeepVariant 1.10.0</code>, <code>ExpansionHunter 5.0.0</code>, <code>bcftools 1.21</code>, <code>slivar 0.3.1</code>; Annotation: <code>Ensembl VEP 116</code> (gnomAD v4 exomes/genomes), <code>ClinVar GRCh38 VCF</code>, <code>Exomiser 15.0.0 (2512)</code>, <code>STRchive</code> (<code>strchive_used={_esc(data.get("strchive_used"))}</code>).</td>
+      <td colspan="3">Reference: <code>GRCh38</code>; Pipeline: <code>{pipeline_version}</code>; Step image: <code>{image_tag}</code>; STRchive: <code>strchive_used={_esc(data.get("strchive_used"))}</code>.</td>
     </tr>
     <tr>
       <th>Workflow Limitations</th>
@@ -748,9 +979,10 @@ def render_pdf_html(data: dict) -> str:
     </tr>
     <tr>
       <th>Run Identifiers</th>
-      <td colspan="3">Sample: <code>{sample}</code> | Schema version: <code>{_esc(data.get("schema_version", 1))}</code> | Image: <code>nelly-acmg-agent:v4</code> | LLM backend/model/status: <code>{llm_backend}</code> / <code>{llm_model}</code> / <code>{llm_status}</code></td>
+      <td colspan="3">Sample: <code>{sample}</code> | Schema version: <code>{_esc(data.get("schema_version", 1))}</code> | Pipeline: <code>{pipeline_version}</code> | Image: <code>{image_tag}</code> | LLM backend/model/status: <code>{llm_backend}</code> / <code>{llm_model}</code> / <code>{llm_status}</code></td>
     </tr>
   </table>
+  {appendix_c_html}
 
 </body>
 </html>

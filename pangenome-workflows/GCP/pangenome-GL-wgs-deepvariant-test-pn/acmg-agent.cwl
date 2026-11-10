@@ -33,8 +33,9 @@ requirements:
       ACMG_LLM_MODEL: $(inputs.llm_model)
       ACMG_LLM_API_KEY: $(inputs.llm_api_key)
       ACMG_LLM_MAX_TOKENS: $(String(inputs.llm_max_tokens))
+      ACMG_PIPELINE_VERSION: $(inputs.pipeline_version)
   DockerRequirement:
-    dockerPull: 'nelly-acmg-agent:v4'
+    dockerPull: 'nelly-acmg-agent:v5'
 arguments:
   # VEP-annotated mini-VCF from the vep-candidates step: the ACMG evidence
   # builder's primary annotation source (consequence, MANE/HGVS, AFs).
@@ -125,6 +126,9 @@ inputs:
   llm_max_tokens:
     type: int
     default: 4096
+  pipeline_version:
+    type: string
+    default: "nelly-workflows modernise-2026-11"
 outputs:
   acmg_json:
     type: File

@@ -36,6 +36,7 @@ def serialize_candidate_assessment(
     agent_rationale: str | None = None,
     agent_narrative: str | None = None,
     agent_status: str | None = None,
+    agent_wall_seconds: float | None = None,
 ) -> dict:
     if adjusted_codes is not None:
         adjusted_list = [str(code) for code in adjusted_codes]
@@ -121,6 +122,7 @@ def serialize_candidate_assessment(
         "llm_adjustments": computed_adjustments,
         "adjusted_by_agent": adjusted_list,
         "agent_status": resolved_status,
+        "agent_wall_seconds": agent_wall_seconds,
         "agent_rationale": agent_rationale,
         "agent_narrative": agent_narrative,
         "rationale": rationale or default_rationale,
