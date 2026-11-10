@@ -1,7 +1,8 @@
-"""Tests for clinical PDF report generation (WeasyPrint + pypdf, Task R8 / R9 / design §11)."""
+"""Tests for clinical PDF report generation (WeasyPrint + pypdf, Task R8 / R9 / R10 / design §11)."""
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import pypdf
 
 import acmg_agent.cli as cli_mod
@@ -15,13 +16,14 @@ FIX = Path(__file__).parent / "fixtures" / "acmg"
 def _extract_pdf_text(pdf_path: Path) -> tuple[int, str]:
     reader = pypdf.PdfReader(str(pdf_path))
     pages = len(reader.pages)
-    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    raw = "\n".join(page.extract_text() or "" for page in reader.pages)
+    text = re.sub(r"\s+", " ", raw)
     return pages, text
 
 
 def test_pdf_report_ts2_deterministic(tmp_path, monkeypatch):
     monkeypatch.setenv("ACMG_PIPELINE_VERSION", "nelly-workflows modernise-2026-11")
-    monkeypatch.setenv("ACMG_IMAGE_TAG", "nelly-acmg-agent:v5")
+    monkeypatch.setenv("ACMG_IMAGE_TAG", "nelly-acmg-agent:v6")
     out_md = tmp_path / "acmg-report.md"
     out_json = tmp_path / "acmg-assessment.json"
     out_pdf = tmp_path / "acmg-report.pdf"
@@ -62,13 +64,19 @@ def test_pdf_report_ts2_deterministic(tmp_path, monkeypatch):
     assert "not observed in gnomAD v4 (exomes/genomes)" in text
     assert "0.00e+00" not in text
 
-    # R9 (4): TS2 has second P/LP candidate (SEMA6B Likely pathogenic) -> compact table in section 3 + Appendix C
+    # R9 (4) + R10 (2): Secondary P/LP candidate (SEMA6B) labelled 'secondary finding — not the reported diagnosis'
     assert "Appendix C" in text
     assert "SEMA6B" in text
+    assert "secondary finding — not the reported diagnosis" in text
+
+    # R10 (3): Section 3 Ranked Candidates table includes Associated Disease column content
+    sec3_slice = text.split("3. Ranked SNV / Indel Candidates", 1)[1].split("4. Short Tandem Repeat Expansions", 1)[0]
+    assert "several forms (OMIM:272800)" in sec3_slice
+    assert "Epilepsy, progressive myoclonic, 11 (OMIM:618876)" in sec3_slice
 
     # R9 (6): Pipeline version and image tag from env
     assert "nelly-workflows modernise-2026-11" in text
-    assert "nelly-acmg-agent:v5" in text
+    assert "nelly-acmg-agent:v6" in text
 
     for expected in ("PVS1", "Met", "HEXA", "Appendix A", "Appendix B"):
         assert expected in text, f"Missing {expected!r} in TS2 PDF text"
@@ -104,8 +112,60 @@ def test_pdf_report_hd2_deterministic(tmp_path):
     assert "**HTT**" not in text
     assert "not observed in gnomAD v4 (exomes/genomes)" in text
     assert "0.00e+00" not in text
+
+    # R10 (1): Expansion-led Section 2 presents repeat decision as primary table + 2.1 secondary SNV/indel
+    assert "2. Primary Variant Evaluation — Short Tandem Repeat Expansion (Leading Finding)" in text
+    assert "larger allele 46 ≥ pathogenic_min 36 → pathogenic range" in text
+    assert "STRchive" in text
+    assert "do not apply to short tandem repeat expansions" in text
+    assert "points-to-consider" in text
+    assert "2.1 Highest-ranked SNV/indel candidate (secondary finding)" in text
+    assert "secondary finding — not the reported diagnosis" in text
+
+    # R10 (3): Section 3 Ranked Candidates table includes Associated Disease column content
+    sec3_slice = text.split("3. Ranked SNV / Indel Candidates", 1)[1].split("4. Short Tandem Repeat Expansions", 1)[0]
+    assert "Epilepsy, progressive myoclonic, 11 (OMIM:618876)" in sec3_slice
+
     for expected in ("PVS1", "Met", "HTT", "Appendix"):
         assert expected in text, f"Missing {expected!r} in HD2 PDF text"
+
+
+def test_cli_render_subcommand_regenerates_pdf_and_md_without_inputs(tmp_path):
+    out_md = tmp_path / "acmg-report.md"
+    out_json = tmp_path / "acmg-assessment.json"
+    out_pdf = tmp_path / "acmg-report.pdf"
+    rc = main([
+        "assess",
+        "--genes-tsv", str(FIX / "HD2/exomiser.genes.tsv"),
+        "--variants-tsv", str(FIX / "HD2/exomiser.variants.tsv"),
+        "--eh-json", str(FIX / "HD2/eh_repeats.json"),
+        "--vep-vcf", str(FIX / "vep.vcf"),
+        "--clinvar-vcf", str(FIX / "clinvar.vcf.gz"),
+        "--gene-table", str(FIX / "gene_table.tsv"),
+        "--sample", "HD2",
+        "--no-llm",
+        "--output-md", str(out_md),
+        "--output-json", str(out_json),
+        "--output-pdf", str(out_pdf),
+    ])
+    assert rc == 0
+    assert out_json.exists()
+
+    re_pdf = tmp_path / "rerendered.pdf"
+    re_md = tmp_path / "rerendered.md"
+    rc2 = main([
+        "render",
+        "--assessment", str(out_json),
+        "--out-pdf", str(re_pdf),
+        "--out-md", str(re_md),
+    ])
+    assert rc2 == 0
+    assert re_pdf.exists() and re_pdf.stat().st_size > 1000
+    assert re_md.exists() and "HTT" in re_md.read_text()
+    n_pages, text = _extract_pdf_text(re_pdf)
+    assert n_pages >= 2
+    assert "larger allele 46 ≥ pathogenic_min 36 → pathogenic range" in text
+    assert "secondary finding — not the reported diagnosis" in text
 
 
 def test_pdf_report_ts2_with_fake_backend_rationale(tmp_path, monkeypatch):

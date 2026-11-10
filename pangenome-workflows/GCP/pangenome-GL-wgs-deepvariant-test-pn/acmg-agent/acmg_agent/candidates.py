@@ -578,6 +578,7 @@ def read_eh_expansions(path: str | Path | None, strchive_loci: dict | None = Non
                 norm_max = (call.ranges.get("benign") or (None, 0))[1] or 0
                 path_min = (call.ranges.get("pathogenic") or (0, None))[0] or 0
                 results.append({
+                    "locus_id": locus_id,
                     "gene": call.gene,
                     "genotypes": gt,
                     "ci": ci,
@@ -611,6 +612,7 @@ def read_eh_expansions(path: str | Path | None, strchive_loci: dict | None = Non
                 status = "normal"
                 tier_str = "normal"
             results.append({
+                "locus_id": locus_id,
                 "gene": locus_id,
                 "genotypes": gt,
                 "ci": ci,

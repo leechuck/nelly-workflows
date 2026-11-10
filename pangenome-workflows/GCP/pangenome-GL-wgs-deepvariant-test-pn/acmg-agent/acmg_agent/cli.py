@@ -371,6 +371,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
                 exp = leading_exp_obj
                 leading_dict = {
                     "kind": "expansion",
+                    "locus_id": exp.get("locus_id", exp["gene"]),
                     "gene": exp["gene"],
                     "variant": f"{exp['gene']} repeat ({exp['genotypes']})",
                     "hgvs": None,
@@ -383,6 +384,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
                     "conflict": False,
                     "allele1": exp["allele1"],
                     "allele2": exp["allele2"],
+                    "max_allele": exp.get("max_allele", max(exp["allele1"], exp["allele2"])),
                     "genotypes": exp["genotypes"],
                     "ci": exp["ci"],
                     "normal_max": exp["normal_max"],
@@ -413,6 +415,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
                 exp = lead_choice[1]
                 leading_dict = {
                     "kind": "expansion",
+                    "locus_id": exp.get("locus_id", exp["gene"]),
                     "gene": exp["gene"],
                     "variant": f"{exp['gene']} repeat ({exp['genotypes']})",
                     "hgvs": None,
@@ -425,6 +428,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
                     "conflict": False,
                     "allele1": exp["allele1"],
                     "allele2": exp["allele2"],
+                    "max_allele": exp.get("max_allele", max(exp["allele1"], exp["allele2"])),
                     "genotypes": exp["genotypes"],
                     "ci": exp["ci"],
                     "normal_max": exp["normal_max"],
@@ -521,7 +525,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
         )
         phenotype = (args.phenotype or "")
         pipeline_version = os.environ.get("ACMG_PIPELINE_VERSION") or "nelly-workflows modernise-2026-11"
-        image_tag = os.environ.get("ACMG_IMAGE_TAG") or "nelly-acmg-agent:v5"
+        image_tag = os.environ.get("ACMG_IMAGE_TAG") or "nelly-acmg-agent:v6"
         data = {
             "schema_version": 1,
             "sample": args.sample,
@@ -565,6 +569,20 @@ def cmd_assess(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_render(args: argparse.Namespace) -> int:
+    import json
+    assess_path = Path(args.assessment)
+    if not assess_path.exists():
+        sys.stderr.write(f"acmg-agent render: assessment JSON not found: {assess_path}\n")
+        return 1
+    data = json.loads(assess_path.read_text())
+    if getattr(args, "out_md", None):
+        write_markdown(Path(args.out_md), data)
+    if getattr(args, "out_pdf", None):
+        safe_write_pdf(Path(args.out_pdf), data)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="acmg-agent", description="ACMG/AMP 2015 + ClinGen SVI deterministic engine & CLI")
     sub = p.add_subparsers(dest="subcommand", required=True)
@@ -598,6 +616,14 @@ def build_parser() -> argparse.ArgumentParser:
     ass.add_argument("--output-json", required=True)
     ass.add_argument("--output-pdf", default=None, help="Output PDF path (defaults to <output-md>.pdf)")
 
+    ren = sub.add_parser(
+        "render",
+        help="Regenerate Markdown and/or PDF from an existing acmg-assessment.json without touching inputs or the LLM",
+    )
+    ren.add_argument("--assessment", required=True, help="Path to existing acmg-assessment.json")
+    ren.add_argument("--out-pdf", "--output-pdf", dest="out_pdf", default=None, help="Output PDF path")
+    ren.add_argument("--out-md", "--output-md", dest="out_md", default=None, help="Output Markdown path")
+
     return p
 
 
@@ -608,6 +634,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_extract(args)
     if args.subcommand == "assess":
         return cmd_assess(args)
+    if args.subcommand == "render":
+        return cmd_render(args)
     return 1
 
 
