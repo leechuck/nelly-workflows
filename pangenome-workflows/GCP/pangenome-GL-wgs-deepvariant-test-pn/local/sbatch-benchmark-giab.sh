@@ -102,7 +102,7 @@ stage_keep_file() {
   local tmp_file="${dest}.part.$$"
   rm -f "$tmp_file"
   echo "[$(date -Is)] Staging $keep_src -> $dest ($expected_bytes bytes) ..."
-  if ! "$WORK_ROOT/venv/bin/arv-get" "$keep_src" "$tmp_file"; then
+  if ! "$WORK_ROOT/venv/bin/arv-get" -f --threads 16 "$keep_src" "$tmp_file"; then
     rm -f "$tmp_file"
     rmdir "$lock_dir" 2>/dev/null || true
     echo "[$(date -Is)] ERROR: arv-get failed for $keep_src" >&2
