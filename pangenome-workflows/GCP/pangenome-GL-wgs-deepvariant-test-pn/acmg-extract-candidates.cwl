@@ -18,7 +18,7 @@ requirements:
     envDef:
       PYTHONPATH: /app
   DockerRequirement:
-    dockerPull: 'nelly-acmg-agent:v3'
+    dockerPull: 'nelly-acmg-agent:v4'
 arguments:
   - prefix: --genes-tsv
     valueFrom: $(inputs.exomiser_genes_tsv.path)

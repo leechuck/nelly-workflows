@@ -29,6 +29,7 @@ from acmg_agent.inputs import (
 )
 from acmg_agent.repeats import load_strchive
 from acmg_agent.model import Evidence
+from acmg_agent.pdf_report import safe_write_pdf
 from acmg_agent.report import (
     build_deterministic_narrative,
     serialize_candidate_assessment,
@@ -545,6 +546,12 @@ def cmd_assess(args: argparse.Namespace) -> int:
 
     write_json(args.output_json, data)
     write_markdown(args.output_md, data)
+    pdf_path = (
+        Path(args.output_pdf)
+        if getattr(args, "output_pdf", None)
+        else Path(args.output_md).with_suffix(".pdf")
+    )
+    safe_write_pdf(pdf_path, data)
     return 0
 
 
@@ -559,7 +566,7 @@ def build_parser() -> argparse.ArgumentParser:
     ext.add_argument("--top", type=int, default=15)
     ext.add_argument("--output-vcf", required=True)
 
-    ass = sub.add_parser("assess", help="Evaluate ACMG criteria and emit JSON + Markdown reports")
+    ass = sub.add_parser("assess", help="Evaluate ACMG criteria and emit JSON + Markdown + PDF reports")
     ass.add_argument("--genes-tsv", default=None)
     ass.add_argument("--variants-tsv", default=None)
     ass.add_argument("--eh-json", default=None)
@@ -579,6 +586,7 @@ def build_parser() -> argparse.ArgumentParser:
     ass.add_argument("--top", type=int, default=15)
     ass.add_argument("--output-md", required=True)
     ass.add_argument("--output-json", required=True)
+    ass.add_argument("--output-pdf", default=None, help="Output PDF path (defaults to <output-md>.pdf)")
 
     return p
 

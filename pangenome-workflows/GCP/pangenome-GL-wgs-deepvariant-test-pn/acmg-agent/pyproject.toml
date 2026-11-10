@@ -5,6 +5,7 @@ description = "Deterministic ACMG/AMP 2015 + ClinGen SVI classification engine a
 requires-python = ">=3.11"
 dependencies = [
     "pysam",
+    "weasyprint",
 ]
 
 [project.scripts]
@@ -12,6 +13,7 @@ acmg-agent = "acmg_agent.cli:main"
 
 [dependency-groups]
 dev = [
+    "pypdf",
     "pytest",
 ]
 

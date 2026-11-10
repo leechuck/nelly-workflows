@@ -34,7 +34,7 @@ requirements:
       ACMG_LLM_API_KEY: $(inputs.llm_api_key)
       ACMG_LLM_MAX_TOKENS: $(String(inputs.llm_max_tokens))
   DockerRequirement:
-    dockerPull: 'nelly-acmg-agent:v3'
+    dockerPull: 'nelly-acmg-agent:v4'
 arguments:
   # VEP-annotated mini-VCF from the vep-candidates step: the ACMG evidence
   # builder's primary annotation source (consequence, MANE/HGVS, AFs).
@@ -73,6 +73,8 @@ arguments:
     valueFrom: acmg-assessment.json
   - prefix: --output-md
     valueFrom: acmg-report.md
+  - prefix: --output-pdf
+    valueFrom: acmg-report.pdf
 inputs:
   vep_vcf:
     type: File
@@ -134,3 +136,8 @@ outputs:
     format: "http://edamontology.org/format_1960"   # Markdown
     outputBinding:
       glob: acmg-report.md
+  acmg_pdf:
+    type: File?
+    format: "http://edamontology.org/format_3508"   # PDF
+    outputBinding:
+      glob: acmg-report.pdf

@@ -1,7 +1,7 @@
-# nelly-acmg-agent:v2 -- ACMG evaluation agent runtime.
+# nelly-acmg-agent:v4 -- ACMG evaluation agent runtime + WeasyPrint PDF renderer.
 #
 # Build context is the acmg-agent/ directory:
-#   docker build -t nelly-acmg-agent:v2 acmg-agent/
+#   docker build -t nelly-acmg-agent:v4 acmg-agent/
 # (MODEL_URL defaults to bartowski's Qwen2.5-3B-Instruct Q4_K_M GGUF, ~2 GB;
 # build on ws, not the laptop. In production the step defaults to the lab
 # unimatrix01 Qwen3.8-27B endpoint via ACMG_LLM_BACKEND=openai, keeping the
@@ -42,6 +42,12 @@ RUN pip install --no-cache-dir llama-cpp-python==0.3.2 pysam
 RUN mkdir -p /model \
     && curl -fL --retry 3 --retry-delay 5 "${MODEL_URL}" -o /model/model.gguf \
     && test "$(stat -c %s /model/model.gguf)" -gt 100000000
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libharfbuzz-subset0 fonts-dejavu \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir weasyprint pypdf
 
 COPY acmg_agent /app/acmg_agent
 
