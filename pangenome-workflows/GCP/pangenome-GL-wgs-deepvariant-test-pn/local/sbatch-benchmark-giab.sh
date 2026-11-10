@@ -4,7 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=24
 #SBATCH --mem=180G
-#SBATCH --time=24:00:00
+#SBATCH --time=12:00:00
 
 # Slurm batch wrapper for Phase 3 GIAB benchmark runs (and main-vg runs) on IBEX:
 # 1. Atomically stages any required GIAB / legacy inputs from Arvados Keep into
