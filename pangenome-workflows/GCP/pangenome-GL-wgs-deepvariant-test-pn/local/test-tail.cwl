@@ -177,6 +177,9 @@ outputs:
   output_acmg_pdf:
     type: File?
     outputSource: acmg-agent/acmg_pdf
+  output_llm_trace:
+    type: File?
+    outputSource: acmg-agent/llm_trace
 
 steps:
   bcftools-concat:
@@ -201,7 +204,7 @@ steps:
     in:
       metadata: metadata
       fallback_hpo_terms: hpo_terms
-    out: [pheno_output, hpo_terms, expansionhunter_sex, exomiser_sex]
+    out: [pheno_output, hpo_terms, expansionhunter_sex, exomiser_sex, patient_identifier]
     run: ../phenofrommetadata.cwl
 
   exclude-eh-regions:
@@ -296,6 +299,7 @@ steps:
       eh_json: eh_json
       slivar_vcf: slivar/slivar_output
       sample_name: sample_name
+      patient_id: phenofrommetadata/patient_identifier
       hpo_terms: phenofrommetadata/hpo_terms
       phenotype: phenofrommetadata/pheno_output
       sample_sex: phenofrommetadata/exomiser_sex
@@ -306,5 +310,5 @@ steps:
       llm_api_key: llm_api_key
       llm_max_tokens: llm_max_tokens
       pipeline_version: pipeline_version
-    out: [acmg_json, acmg_report, acmg_pdf]
+    out: [acmg_json, acmg_report, acmg_pdf, llm_trace]
     run: ../acmg-agent.cwl
