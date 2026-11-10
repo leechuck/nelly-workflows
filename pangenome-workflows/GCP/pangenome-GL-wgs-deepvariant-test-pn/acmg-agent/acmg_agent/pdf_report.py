@@ -385,10 +385,28 @@ def _render_expansion_primary_section(lead: dict, data: dict, lead_snv: dict | N
     return sec2_html
 
 
+def _narrative_is_complete(text: object, status: object) -> bool:
+    if str(status or "") == "ok_truncated":
+        return False
+    if not isinstance(text, str) or not text.strip():
+        return False
+    return bool(re.search(r'[.!?]["\'”’)\]]*\s*$', text.strip()))
+
+
 def _build_structured_summary_html(data: dict, lead: dict | None, near_ties: list[dict], cands: list[dict]) -> str:
-    """Render the Section 1 Summary from structured fields (or convert inline Markdown if agent narrative)."""
-    if isinstance(lead, dict) and lead.get("agent_narrative"):
+    """Render the Section 1 Summary from structured fields (or convert inline Markdown if complete agent narrative)."""
+    if isinstance(lead, dict) and _narrative_is_complete(lead.get("agent_narrative"), lead.get("agent_status")):
         return _md_inline_to_html(lead["agent_narrative"])
+    truncated_notice = ""
+    if isinstance(lead, dict) and (
+        lead.get("agent_status") == "ok_truncated"
+        or (lead.get("agent_narrative") and not _narrative_is_complete(lead.get("agent_narrative"), lead.get("agent_status")))
+    ):
+        truncated_notice = (
+            " <em>[Note: Automated reviewer narrative was truncated at the token limit after retry "
+            "(<code>agent_status=ok_truncated</code>); deterministic clinical summary shown above and "
+            "complete reviewer rationale in Appendix A.]</em>"
+        )
     if isinstance(lead, dict) and lead.get("kind") == "expansion":
         return (
             f"Leading candidate is a pathogenic-range short tandem repeat expansion in "
@@ -396,6 +414,7 @@ def _build_structured_summary_html(data: dict, lead: dict | None, near_ties: lis
             f"95% CI <code>{_esc(lead.get('ci'))}</code>; normal &le; <code>{_esc(lead.get('normal_max'))}</code>, "
             f"pathogenic &ge; <code>{_esc(lead.get('pathogenic_min'))}</code>) associated with "
             f"{_esc(lead.get('disease'))} (<code>{_esc(lead.get('moi'))}</code>)."
+            f"{truncated_notice}"
         )
     if isinstance(lead, dict):
         lead_snv = next(
@@ -427,7 +446,7 @@ def _build_structured_summary_html(data: dict, lead: dict | None, near_ties: lis
                 for t in near_ties
             )
             summary += f" Near-tie alternatives within tie margin: {alt_str}."
-        return summary
+        return summary + truncated_notice
     return _md_inline_to_html(data.get("narrative") or "No pathogenic or likely pathogenic candidate was identified.")
 
 
@@ -489,7 +508,10 @@ def _render_compact_plp_table(secondary_plp_cands: list[dict]) -> str:
 
 def render_pdf_html(data: dict) -> str:
     """Render the clinical report HTML+CSS document from assessment JSON data."""
-    sample = _esc(data.get("sample") or "proband")
+    raw_sample = str(data.get("sample") or "proband").strip() or "proband"
+    raw_patient_id = str(data.get("patient_id") or "").strip() or raw_sample
+    sample = _esc(raw_sample)
+    patient_id = _esc(raw_patient_id)
     sex = _esc(data.get("sex") or "unspecified")
     hpo_list = data.get("hpo_terms") or []
     hpo_str = ", ".join(str(t) for t in hpo_list) if hpo_list else "none provided"
@@ -504,7 +526,7 @@ def render_pdf_html(data: dict) -> str:
     image_tag = _esc(
         data.get("image_tag")
         or os.environ.get("ACMG_IMAGE_TAG")
-        or "nelly-acmg-agent:v6"
+        or "nelly-acmg-agent:v7"
     )
 
     lead = data.get("leading_candidate")
@@ -858,13 +880,22 @@ def render_pdf_html(data: dict) -> str:
             or c.get("agent_status") not in (None, "not_reviewed", "skipped")
         )
         if has_card_content:
+            raw_nar = c.get("agent_narrative")
+            if c.get("agent_status") == "ok_truncated" or (raw_nar and not _narrative_is_complete(raw_nar, c.get("agent_status"))):
+                nar_html = (
+                    "<em>[Truncated at token limit after retry (<code>status=ok_truncated</code>); "
+                    "refer to complete reviewer rationale above.]</em> "
+                    + _md_inline_to_html(raw_nar)
+                )
+            else:
+                nar_html = _md_inline_to_html(raw_nar)
             appendix_a_cards.append(f"""
             <div class="llm-card">
               <h4>{_esc(c.get("gene"))} (<code>{_esc(c.get("variant"))}</code>) — Status: <code>{cst}</code></h4>
               <ul>
                 <li><strong>Adjusted criteria:</strong> {adj_str}</li>
                 <li><strong>Reviewer rationale:</strong> {_md_inline_to_html(c.get("agent_rationale"))}</li>
-                <li><strong>Reviewer narrative:</strong> {_md_inline_to_html(c.get("agent_narrative"))}</li>
+                <li><strong>Reviewer narrative:</strong> {nar_html}</li>
               </ul>
             </div>
             """)
@@ -921,13 +952,13 @@ def render_pdf_html(data: dict) -> str:
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>ACMG/AMP Clinical Variant Report — {sample}</title>
+  <title>ACMG/AMP Clinical Variant Report — Patient ID: {patient_id} (VCF sample: {sample})</title>
   <style>
     @page {{
       size: A4;
       margin: 15mm 12mm 16mm 12mm;
       @bottom-left {{
-        content: "ACMG/AMP Clinical Variant Interpretation Report — Sample: {sample} (GRCh38)";
+        content: "ACMG/AMP Clinical Variant Interpretation Report — Patient ID: {patient_id} (VCF sample: {sample}) (GRCh38)";
         font-family: "DejaVu Sans", sans-serif;
         font-size: 7.5pt;
         color: #555555;
@@ -1134,7 +1165,7 @@ def render_pdf_html(data: dict) -> str:
     {KV_COLGROUP}
     <tr>
       <th>Patient / Sample ID</th>
-      <td><code>{sample}</code></td>
+      <td>Patient ID: <code>{patient_id}</code> (VCF sample: <code>{sample}</code>)</td>
       <th>Sex (Metadata)</th>
       <td><code>{sex}</code></td>
     </tr>
@@ -1200,7 +1231,7 @@ def render_pdf_html(data: dict) -> str:
     </tr>
     <tr>
       <th>Run Identifiers</th>
-      <td colspan="3">Sample: <code>{sample}</code> | Schema version: <code>{_esc(data.get("schema_version", 1))}</code> | Pipeline: <code>{pipeline_version}</code> | Image: <code>{image_tag}</code> | LLM backend/model/status: <code>{llm_backend}</code> / <code>{llm_model}</code> / <code>{llm_status}</code></td>
+      <td colspan="3">Patient ID: <code>{patient_id}</code> (VCF sample: <code>{sample}</code>) | Schema version: <code>{_esc(data.get("schema_version", 1))}</code> | Pipeline: <code>{pipeline_version}</code> | Image: <code>{image_tag}</code> | LLM backend/model/status: <code>{llm_backend}</code> / <code>{llm_model}</code> / <code>{llm_status}</code></td>
     </tr>
   </table>
   {appendix_c_html}

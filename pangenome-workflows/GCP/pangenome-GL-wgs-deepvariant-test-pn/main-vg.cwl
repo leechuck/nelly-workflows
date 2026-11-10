@@ -256,7 +256,7 @@ steps:
     in:
       metadata: metadata
       fallback_hpo_terms: hpo_terms
-    out: [pheno_output, hpo_terms, expansionhunter_sex, exomiser_sex]
+    out: [pheno_output, hpo_terms, expansionhunter_sex, exomiser_sex, patient_identifier]
     run: phenofrommetadata.cwl
 
   # Strip records inside ExpansionHunter ReferenceRegions before Exomiser: DeepVariant
@@ -328,6 +328,7 @@ steps:
       eh_json: align-and-call/eh_json
       slivar_vcf: slivar/slivar_output
       sample_name: sample_name
+      patient_id: phenofrommetadata/patient_identifier
       hpo_terms: phenofrommetadata/hpo_terms
       phenotype: phenofrommetadata/pheno_output
       sample_sex: phenofrommetadata/exomiser_sex

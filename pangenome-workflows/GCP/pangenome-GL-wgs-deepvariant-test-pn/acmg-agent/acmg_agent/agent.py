@@ -26,7 +26,11 @@ import time
 from dataclasses import dataclass, field, fields
 from typing import Any
 
-from acmg_agent.llm_backends import Message  # noqa: F401 (re-export for callers)
+from acmg_agent.llm_backends import (  # noqa: F401 (re-export Message for callers)
+    Message,
+    _build_trace_entry,
+    append_llm_trace,
+)
 from acmg_agent.model import Criterion, Evidence
 from acmg_agent.tools import (
     REPEAT_READ_TOOL,
@@ -84,6 +88,11 @@ AGENT_SYSTEM_PROMPT = (
     "6. The final classification (pathogenic vs benign vs inconclusive) is "
     "computed by the calling code, not by you. In your rationale, describe the "
     "criteria only.\n"
+    "7. Follow ClinGen SVI rules encoded by the engine: PM2/BS1/BA1 rarity uses "
+    "non-bottlenecked max_af (never overturn PM2 using founder/bottlenecked "
+    "max_af_any_pop such as ASJ/FIN/AMI/MID), and PM3 at supporting applies to "
+    "homozygous (zygosity='hom') variants in AR genes even when other_var_in_gene "
+    "is empty. Keep internal reasoning concise so tool calls finish promptly.\n"
     "If you cannot improve the engine's assessment with pack evidence, submit "
     "no changes and say so in the rationale."
 )
@@ -94,7 +103,7 @@ class AgentResult:
     """Outcome of one per-variant review loop."""
     criteria: list[Criterion]
     rationale: str = ""
-    status: str = "ok"            # ok | rejected | failed | timeout
+    status: str = "ok"            # ok | ok_truncated | rejected | failed | timeout
     narrative: str | None = None
     adjusted: list[str] = field(default_factory=list)
     n_tool_calls: int = 0
@@ -110,8 +119,55 @@ NARRATIVE_SYSTEM_PROMPT = (
     "material; 4-8 sentences; state the criteria that drive the result and name "
     "the strongest near-tie as a differential when one exists. The final "
     "classification is decided by the calling code, so phrase findings evidence "
-    "in neutral terms."
+    "in neutral terms. The criteria list below is already finalized: keep "
+    "internal reasoning brief and output a complete paragraph ending with a "
+    "period (.)."
 )
+
+TERMINAL_PUNCT_RE = re.compile(r'[.!?]["\'”’)\]]*\s*$')
+
+
+def _ends_with_terminal_punctuation(text: str | None) -> bool:
+    """Return True iff *text* is non-empty and ends with sentence-terminal punctuation."""
+    if not text or not text.strip():
+        return False
+    return bool(TERMINAL_PUNCT_RE.search(text.strip()))
+
+
+def _call_backend_chat(
+    backend: Any,
+    messages: list[Message],
+    tools: list[dict],
+    *,
+    max_tokens: int | None = None,
+    trace_meta: dict[str, Any] | None = None,
+    attempt: str = "initial",
+) -> Message:
+    """Invoke ``backend.chat`` with optional ``max_tokens``/``trace_meta`` and ensure trace logging."""
+    t0 = time.monotonic()
+    try:
+        reply = backend.chat(messages, tools, max_tokens=max_tokens, trace_meta=trace_meta)
+    except TypeError:
+        reply = backend.chat(messages, tools)
+    elapsed = time.monotonic() - t0
+    if not getattr(reply, "_trace_logged", False):
+        eff_max_tokens = max_tokens if (max_tokens is not None and max_tokens > 0) else getattr(backend, "max_tokens", None)
+        entry = _build_trace_entry(
+            backend_name=str(getattr(backend, "backend_name", type(backend).__name__)),
+            model_name=getattr(backend, "model_name", None),
+            session_affinity=getattr(backend, "session_affinity", None),
+            url=getattr(backend, "url", None),
+            max_tokens=eff_max_tokens,
+            n_messages=len(messages),
+            n_tools=len(tools or []),
+            resp=None,
+            msg=reply,
+            elapsed_seconds=elapsed,
+            trace_meta=trace_meta,
+            attempt=attempt,
+        )
+        append_llm_trace(entry, trace_path=getattr(backend, "trace_path", None))
+    return reply
 
 
 def _backfill_narrative_tool_messages(
@@ -314,7 +370,12 @@ def run_agent(
             return fallback("tool-call budget exhausted before a valid submission; deterministic result kept", "rejected")
 
         try:
-            reply = backend.chat(messages, tool_specs)
+            reply = _call_backend_chat(
+                backend,
+                messages,
+                tool_specs,
+                trace_meta={"gene": ev.gene, "phase": "review"},
+            )
         except Exception as exc:  # backend crash: fail closed, keep engine result
             return fallback(f"LLM backend failed: {exc}", "failed")
         calls += 1
@@ -342,14 +403,15 @@ def run_agent(
                     ok, reason = validate_submission(det, tc.arguments, allowed_numbers=allowed_numbers)
                     if ok:
                         merged, adjusted = merge_criteria(det, tc.arguments)
+                        narrative, is_truncated = _generate_narrative_with_status(backend, ev, merged, deadline)
                         result = AgentResult(
                             criteria=merged,
                             rationale=str(tc.arguments.get("rationale", "")).strip(),
-                            status="ok",
+                            status="ok_truncated" if is_truncated else "ok",
+                            narrative=narrative,
                             adjusted=adjusted,
                             n_tool_calls=calls,
                         )
-                        result.narrative = _generate_narrative(backend, ev, merged, deadline)
                         return result
                     messages.append(Message(role="tool", content=f"SUBMISSION REJECTED: {reason}", name=SUBMIT_TOOL, tool_call_id=tc.id))
                 elif tc.name in (set(dispatch) - {SUBMIT_TOOL}):
@@ -374,11 +436,20 @@ def pack_allowed_numbers(pack: EvidencePack, det: list[Criterion]) -> set[float]
     return allowed
 
 
-def _generate_narrative(
+def _generate_narrative_with_status(
     backend: Any, ev: Evidence, final_criteria: list[Criterion], deadline: float
-) -> str | None:
+) -> tuple[str | None, bool]:
+    """Generate the per-candidate clinical summary paragraph and check for truncation.
+
+    Returns ``(narrative, is_truncated)``. Uses a larger ``max_tokens`` budget
+    (at least 8192 tokens, since reasoning tokens count against ``max_tokens``
+    on hosted reasoning models), checks both ``finish_reason == 'length'`` and
+    terminal punctuation, retries once with an expanded budget when cut, and
+    returns ``is_truncated=True`` (which maps to ``agent_status='ok_truncated'``)
+    if the retry still fails to produce a complete sentence.
+    """
     if time.monotonic() >= deadline:
-        return None
+        return (None, False)
     criteria_table = "\n".join(
         f"- {c.code}: {c.status}" + (f" ({c.strength})" if c.strength else "") + f" — {c.rationale}"
         for c in final_criteria
@@ -389,16 +460,84 @@ def _generate_narrative(
         "Base it ONLY on the final criteria list and nothing else:\n"
         f"{criteria_table}"
     )
+    base_messages = [
+        Message(role="system", content=NARRATIVE_SYSTEM_PROMPT),
+        Message(role="user", content=user),
+    ]
+    base_max = int(getattr(backend, "max_tokens", 4096) or 4096)
+    narrative_max_tokens = max(base_max * 2, 8192)
     try:
-        reply = backend.chat(
-            [Message(role="system", content=NARRATIVE_SYSTEM_PROMPT), Message(role="user", content=user)],
+        reply = _call_backend_chat(
+            backend,
+            base_messages,
             tools=[],
+            max_tokens=narrative_max_tokens,
+            trace_meta={"gene": ev.gene, "phase": "narrative"},
+            attempt="initial",
         )
     except Exception:
-        return None
-    if not reply.tool_calls and reply.content and reply.content.strip():
-        return reply.content.strip()
-    return None
+        return (None, False)
+
+    text = (reply.content or "").strip() if not reply.tool_calls else ""
+    is_length_cut = getattr(reply, "finish_reason", None) == "length"
+    has_term_punct = _ends_with_terminal_punctuation(text)
+
+    if text and not is_length_cut and has_term_punct:
+        return (text, False)
+
+    # Retry once if the narrative was truncated (finish_reason=length) or lacks terminal punctuation
+    if time.monotonic() < deadline:
+        retry_max_tokens = max(narrative_max_tokens * 2, 16384)
+        cut_reason = getattr(reply, "finish_reason", None) or "missing_terminal_punctuation"
+        if text:
+            retry_messages = list(base_messages) + [
+                Message(role="assistant", content=text),
+                Message(
+                    role="user",
+                    content=(
+                        f"Your previous narrative was cut off before completion ({cut_reason}). "
+                        "Write the complete 4-8 sentence clinical summary paragraph from start to finish, "
+                        "using only the supplied criteria, and end with a period (.)."
+                    ),
+                ),
+            ]
+        else:
+            retry_messages = list(base_messages) + [
+                Message(
+                    role="user",
+                    content=(
+                        "Write the complete 4-8 sentence clinical summary paragraph from start to finish, "
+                        "using only the supplied criteria, and end with a period (.)."
+                    ),
+                ),
+            ]
+        try:
+            reply2 = _call_backend_chat(
+                backend,
+                retry_messages,
+                tools=[],
+                max_tokens=retry_max_tokens,
+                trace_meta={"gene": ev.gene, "phase": "narrative_retry"},
+                attempt="retry",
+            )
+            text2 = (reply2.content or "").strip() if not reply2.tool_calls else ""
+            is_length_cut2 = getattr(reply2, "finish_reason", None) == "length"
+            has_term_punct2 = _ends_with_terminal_punctuation(text2)
+            if text2 and not is_length_cut2 and has_term_punct2:
+                return (text2, False)
+            best = text2 if len(text2) >= len(text) else text
+            return (best or None, True)
+        except Exception:
+            return (text or None, True)
+
+    return (text or None, True)
+
+
+def _generate_narrative(
+    backend: Any, ev: Evidence, final_criteria: list[Criterion], deadline: float
+) -> str | None:
+    narrative, _truncated = _generate_narrative_with_status(backend, ev, final_criteria, deadline)
+    return narrative
 
 
 EXPANSION_SYSTEM_PROMPT = (
@@ -498,7 +637,12 @@ def run_expansion_agent(
             return fallback("tool-call budget exhausted before a valid expansion narrative; deterministic result kept", "rejected")
 
         try:
-            reply = backend.chat(messages, tool_specs)
+            reply = _call_backend_chat(
+                backend,
+                messages,
+                tool_specs,
+                trace_meta={"gene": pack.gene, "phase": "expansion"},
+            )
         except Exception as exc:
             return fallback(f"LLM backend failed: {exc}", "failed")
         calls += 1
@@ -656,8 +800,8 @@ def run_all(
         leading_expansion["n_tool_calls"] = exp_res.n_tool_calls
         leading_expansion["agent_status"] = exp_res.status
         leading_expansion["agent_rationale"] = exp_res.rationale
-        leading_expansion["narrative"] = exp_res.narrative if exp_res.status == "ok" else None
-        leading_expansion["agent_narrative"] = exp_res.narrative if exp_res.status == "ok" else None
+        leading_expansion["narrative"] = exp_res.narrative if exp_res.status in ("ok", "ok_truncated") else None
+        leading_expansion["agent_narrative"] = exp_res.narrative if exp_res.status in ("ok", "ok_truncated") else None
         leading_expansion["adjusted"] = []
         leading_expansion["adjusted_by_agent"] = []
         exp_ok = exp_res.status == "ok"

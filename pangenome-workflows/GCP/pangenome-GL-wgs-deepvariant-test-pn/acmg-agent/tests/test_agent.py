@@ -48,25 +48,37 @@ def det_criteria(ev: Evidence) -> list[Criterion]:
 class FakeBackend:
     """Scripted tool-calling backend.
 
-    Script items: ToolCall (one call), str (plain assistant content),
-    Exception instance (raised). When the script is exhausted, a canned
-    content-only reply is returned (narrative / finalisation nudge).
+    Script items: ToolCall (one call), Message (custom message with finish_reason/usage),
+    str (plain assistant content), Exception instance (raised). When the script is
+    exhausted, a canned content-only reply ending with a period is returned.
     """
 
     def __init__(self, script):
         self.script = list(script)
         self.calls: list[tuple[list[Message], list[dict]]] = []
+        self.max_tokens_seen: list[int | None] = []
+        self.trace_path: str | None = None
 
-    def chat(self, messages: list[Message], tools: list[dict]) -> Message:
+    def chat(
+        self,
+        messages: list[Message],
+        tools: list[dict],
+        *,
+        max_tokens: int | None = None,
+        trace_meta: dict | None = None,
+    ) -> Message:
         self.calls.append((messages, tools))
+        self.max_tokens_seen.append(max_tokens)
         if not self.script:
-            return Message(role="assistant", content=f"narrative for candidate {len(self.calls)}")
+            return Message(role="assistant", content=f"narrative for candidate {len(self.calls)}.", finish_reason="stop")
         item = self.script.pop(0)
         if isinstance(item, Exception):
             raise item
+        if isinstance(item, Message):
+            return item
         if isinstance(item, str):
-            return Message(role="assistant", content=item)
-        return Message(role="assistant", tool_calls=[item])
+            return Message(role="assistant", content=item, finish_reason="stop")
+        return Message(role="assistant", tool_calls=[item], finish_reason="tool_calls")
 
 
 def submit_tool(payload: dict) -> ToolCall:
@@ -329,9 +341,9 @@ def test_run_all_reviews_in_rank_order_starting_with_leading():
         "rationale": "ok review",
     }
     backend = FakeBackend([
-        submit_tool(payload), "HEXA narrative",
-        submit_tool(payload), "SEMA6B narrative",
-        submit_tool(payload), "GENE3 narrative",
+        submit_tool(payload), "HEXA narrative.",
+        submit_tool(payload), "SEMA6B narrative.",
+        submit_tool(payload), "GENE3 narrative.",
     ])
     out, status = run_all(cands, backend)
     assert status == "ok"
@@ -359,7 +371,7 @@ def test_run_all_gives_leading_full_budget_even_when_global_tight():
         ],
         "rationale": "leading reviewed despite global elapsed",
     }
-    backend = FakeBackend([submit_tool(payload), "HEXA leading narrative"])
+    backend = FakeBackend([submit_tool(payload), "HEXA leading narrative."])
     # Global budget already exhausted before run_all starts, but leading candidate
     # must still receive its full per_variant_seconds budget first.
     out, status = run_all(
@@ -392,7 +404,7 @@ def test_run_all_never_ok_when_leading_candidate_unreviewed():
     backend = FakeBackend([
         RuntimeError("timeout on leading"),
         submit_tool(ok_payload),
-        "SEMA6B narrative",
+        "SEMA6B narrative.",
     ])
     out, status = run_all(cands, backend)
     by_gene = {c["gene"]: c for c in out}
@@ -503,7 +515,7 @@ def test_run_all_reviews_leading_expansion_first_and_requires_it_for_ok():
     backend2 = FakeBackend([
         RuntimeError("expansion timeout"),
         submit_tool(ok_snv_payload),
-        "ATXN1 narrative",
+        "ATXN1 narrative.",
     ])
     out2, status2 = run_all([_candidate(1, 2, "ATXN1")], backend2, leading_expansion=exp2)
     assert exp2["agent_status"] == "failed"
@@ -709,3 +721,126 @@ def test_openai_backend_http_retries_and_session_affinity(monkeypatch):
     assert msg.content == "ok reply"
     assert len(captured_headers) == 3
     assert all(h.get("X-Session-Affinity") == backend.session_affinity for h in captured_headers)
+
+
+def test_fake_backend_narrative_finish_reason_length_retries_and_traces(tmp_path):
+    import json as _json
+    ev = make_ev(gene="HEXA")
+    det = det_criteria(ev)
+    payload = {
+        "criteria": [],
+        "rationale": "No adjustments were needed; PVS1, PM2, and PM3 are met.",
+    }
+    cut_sentence = (
+        "The final criteria list for HEXA variant 1:100 A>G records PVS1 as met "
+        "(very_strong) for a splice_donor_variant in a LoF-mechanism gene that is not in an NMD"
+    )
+    complete_sentence = (
+        "The final criteria list for HEXA variant 1:100 A>G records PVS1 as met "
+        "(very_strong) for a splice_donor_variant in a LoF-mechanism gene that is not in an "
+        "NMD-escape region, together with PM2 and PM3 at supporting strength."
+    )
+    backend = FakeBackend([
+        submit_tool(payload),
+        Message(
+            role="assistant",
+            content=cut_sentence,
+            finish_reason="length",
+            usage={"prompt_tokens": 350, "completion_tokens": 8192, "total_tokens": 8542},
+        ),
+        Message(
+            role="assistant",
+            content=complete_sentence,
+            finish_reason="stop",
+            usage={"prompt_tokens": 420, "completion_tokens": 110, "total_tokens": 530},
+        ),
+    ])
+    trace_file = tmp_path / "llm-trace.jsonl"
+    backend.trace_path = str(trace_file)
+
+    res = run_agent(ev, det, backend)
+    assert res.status == "ok"
+    assert res.narrative == complete_sentence
+    # Initial narrative call uses >= 8192 max_tokens; retry doubles to >= 16384
+    assert backend.max_tokens_seen[1] >= 8192
+    assert backend.max_tokens_seen[2] >= 16384
+
+    assert trace_file.exists()
+    records = [_json.loads(line) for line in trace_file.read_text().splitlines() if line.strip()]
+    assert len(records) == 3
+    assert records[0]["phase"] == "review"
+    assert records[1]["phase"] == "narrative"
+    assert records[1]["response"]["finish_reason"] == "length"
+    assert records[1]["response"]["usage"]["completion_tokens"] == 8192
+    assert records[2]["phase"] == "narrative_retry"
+    assert records[2]["response"]["finish_reason"] == "stop"
+
+
+def test_fake_backend_narrative_double_truncation_marks_ok_truncated(tmp_path):
+    from acmg_agent.report import render_markdown, serialize_candidate_assessment
+    from acmg_agent.classify import classify
+    import acmg_agent.pdf_report as pdf_mod
+
+    ev = make_ev(gene="PAK2")
+    det = det_criteria(ev)
+    payload = {
+        "criteria": [],
+        "rationale": "PAK2 criteria confirmed deterministically.",
+    }
+    cut1 = "The PAK2 variant is annotated as a frameshift_variant. PVS1 is not met because LoF is unknown and LOEUF=0"
+    cut2 = "The PAK2 variant is annotated as a frameshift_variant in the supplied criteria list and LOEUF=0"
+    backend = FakeBackend([
+        submit_tool(payload),
+        Message(role="assistant", content=cut1, finish_reason="length"),
+        Message(role="assistant", content=cut2, finish_reason="length"),
+    ])
+    trace_file = tmp_path / "llm-trace.jsonl"
+    backend.trace_path = str(trace_file)
+
+    res = run_agent(ev, det, backend)
+    assert res.status == "ok_truncated"
+    assert res.rationale == "PAK2 criteria confirmed deterministically."
+
+    # Verify report (Markdown & PDF HTML) explicitly labels ok_truncated and does not silently print a cut sentence as ok
+    clf = classify(res.criteria)
+    cand_dict = serialize_candidate_assessment(
+        {"gene": "PAK2", "chrom": "1", "pos": "100", "ref": "A", "alt": "G", "hgvs": "c.100+1G>A"},
+        ev,
+        res.criteria,
+        clf,
+        tier=1,
+        adjusted_codes=res.adjusted,
+        agent_rationale=res.rationale,
+        agent_narrative=res.narrative,
+        agent_status=res.status,
+    )
+    assert cand_dict["agent_status"] == "ok_truncated"
+    report_data = {
+        "schema_version": 1,
+        "sample": "sample",
+        "patient_id": "TS1",
+        "llm": {
+            "backend": "openai",
+            "model": "qwen3.8-27b",
+            "status": "partial",
+            "reviewed": ["PAK2"],
+            "unreviewed": [],
+            "statuses": {"PAK2": "ok_truncated"},
+        },
+        "leading_candidate": cand_dict,
+        "near_tie_alternatives": [],
+        "candidates": [cand_dict],
+        "expansions": [],
+        "narrative": "Deterministic leading summary.",
+        "agent_narrative": res.narrative,
+        "errors": [],
+    }
+    md = render_markdown(report_data)
+    assert "ok_truncated" in md
+    assert "truncated at the token limit" in md.lower() or "truncated at token limit" in md.lower()
+    assert "Patient ID**: TS1 (VCF sample: sample)" in md
+
+    html = pdf_mod.render_pdf_html(report_data)
+    assert "ok_truncated" in html
+    assert "Patient ID: <code>TS1</code> (VCF sample: <code>sample</code>)" in html
+    assert "Patient ID: TS1 (VCF sample: sample)" in html

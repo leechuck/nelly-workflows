@@ -17,12 +17,15 @@ UNCODED_METADATA = (
 )
 
 
-def metadata(*phenotypes, gender="male"):
+def metadata(*phenotypes, gender="male", identifier=None):
+    patient_dict = {
+        "gender": gender,
+        "phenotypes": list(phenotypes),
+    }
+    if identifier is not None:
+        patient_dict["identifier"] = identifier
     return {
-        "patient": {
-            "gender": gender,
-            "phenotypes": list(phenotypes),
-        }
+        "patient": patient_dict
     }
 
 
@@ -40,6 +43,7 @@ def test_extracts_genoor_hpo_terms_and_both_sex_vocabularies():
             phenotype("Dementia", "HP:0000726"),
             phenotype("Incoordination", term_id="HP_0002311"),
             phenotype("Excluded feature", "HP:0000001", excluded=True),
+            identifier="HD1",
         )
     )
 
@@ -48,6 +52,7 @@ def test_extracts_genoor_hpo_terms_and_both_sex_vocabularies():
         "hpo_terms": "HP:0002072,HP:0000726,HP:0002311",
         "expansionhunter_sex": "male",
         "exomiser_sex": "MALE",
+        "patient_identifier": "HD1",
     }
 
 
@@ -87,6 +92,7 @@ def test_uses_validated_fallback_for_genoor_metadata_with_null_uris():
         "hpo_terms": "HP:0002072,HP:0000726,HP:0002311",
         "expansionhunter_sex": "male",
         "exomiser_sex": "MALE",
+        "patient_identifier": "HD1",
     }
 
 
@@ -126,6 +132,7 @@ def test_writes_files_consumed_by_cwl(tmp_path: Path):
     assert (tmp_path / "hpo_terms.txt").read_text() == "HP:0000726"
     assert (tmp_path / "expansionhunter_sex.txt").read_text() == "male"
     assert (tmp_path / "exomiser_sex.txt").read_text() == "MALE"
+    assert (tmp_path / "patient_identifier.txt").read_text() == ""
 
 
 def test_cli_writes_all_cwl_outputs_for_the_failing_metadata_shape(
@@ -144,3 +151,4 @@ def test_cli_writes_all_cwl_outputs_for_the_failing_metadata_shape(
     )
     assert (tmp_path / "expansionhunter_sex.txt").read_text() == "male"
     assert (tmp_path / "exomiser_sex.txt").read_text() == "MALE"
+    assert (tmp_path / "patient_identifier.txt").read_text() == "HD1"

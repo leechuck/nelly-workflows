@@ -230,3 +230,27 @@ def test_pdf_failure_writes_error_note_and_exits_zero(tmp_path, monkeypatch):
     err_file = Path(f"{out_pdf}.error.txt")
     assert err_file.exists()
     assert "simulated WeasyPrint failure" in err_file.read_text()
+
+
+def test_pdf_and_markdown_patient_id_and_vcf_sample(tmp_path):
+    out_md = tmp_path / "acmg-report.md"
+    out_json = tmp_path / "acmg-assessment.json"
+    out_pdf = tmp_path / "acmg-report.pdf"
+    rc = main([
+        "assess",
+        "--genes-tsv", str(FIX / "TS2/exomiser.genes.tsv"),
+        "--variants-tsv", str(FIX / "TS2/exomiser.variants.tsv"),
+        "--vep-vcf", str(FIX / "vep.vcf"),
+        "--clinvar-vcf", str(FIX / "clinvar.vcf.gz"),
+        "--gene-table", str(FIX / "gene_table.tsv"),
+        "--sample", "sample",
+        "--patient-id", "TS1",
+        "--no-llm",
+        "--output-md", str(out_md),
+        "--output-json", str(out_json),
+        "--output-pdf", str(out_pdf),
+    ])
+    assert rc == 0
+    assert "Patient ID**: TS1 (VCF sample: sample)" in out_md.read_text()
+    _pages, text = _extract_pdf_text(out_pdf)
+    assert "Patient ID: TS1 (VCF sample: sample)" in text

@@ -27,6 +27,7 @@ def test_workflow_routes_metadata_context_to_both_consumers():
         "hpo_terms",
         "expansionhunter_sex",
         "exomiser_sex",
+        "patient_identifier",
     ]
     eh_sex_in = (
         steps["expansionhunter"]["in"]["sex"]
@@ -41,6 +42,10 @@ def test_workflow_routes_metadata_context_to_both_consumers():
     assert (
         steps["exomiser"]["in"]["sample_sex"]
         == "phenofrommetadata/exomiser_sex"
+    )
+    assert (
+        steps["acmg-agent"]["in"]["patient_id"]
+        == "phenofrommetadata/patient_identifier"
     )
 
 
