@@ -492,7 +492,11 @@ def load_gene_table(path: Path | str) -> dict[str, dict]:
 
 
 def read_slivar_info(vcf_path: Path | str) -> dict[tuple[str, int, str, str], dict]:
-    """Extract gnomad_popmax_af and gnomad_nhomalt from a slivar-annotated VCF."""
+    """Extract gnomad_popmax_af and gnomad_nhomalt from a slivar-annotated VCF.
+
+    slivar uses -1 as a missing-value sentinel for numeric INFO fields; values < 0
+    are normalized to None so they never leak into Evidence.max_af or rationales.
+    """
     p = Path(vcf_path)
     out: dict[tuple[str, int, str, str], dict] = {}
     with pysam.VariantFile(str(p)) as vf:
@@ -501,7 +505,11 @@ def read_slivar_info(vcf_path: Path | str) -> dict[tuple[str, int, str, str], di
             pos = int(rec.pos)
             ref = str(rec.ref)
             popmax = parse_float(rec.info.get("gnomad_popmax_af"))
+            if popmax is not None and popmax < 0:
+                popmax = None
             nhomalt = parse_int(rec.info.get("gnomad_nhomalt"))
+            if nhomalt is not None and nhomalt < 0:
+                nhomalt = None
             for alt in (rec.alts or ()):
                 out[(chrom, pos, ref, str(alt))] = {
                     "popmax_af": popmax,

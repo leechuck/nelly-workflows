@@ -29,6 +29,7 @@ from acmg_agent.inputs import (
 )
 from acmg_agent.repeats import load_strchive
 from acmg_agent.model import Evidence
+from acmg_agent.pdf_report import safe_write_pdf
 from acmg_agent.report import (
     build_deterministic_narrative,
     serialize_candidate_assessment,
@@ -234,6 +235,8 @@ def cmd_assess(args: argparse.Namespace) -> int:
                 gene_table=gene_table,
                 slivar_info=slivar_info,
             )
+            if ev.clinvar_sig and (c.get("clinvar") or "").strip().upper() in ("", "NOT_PROVIDED", "NOT_AVAILABLE", "."):
+                c["clinvar"] = ev.clinvar_sig.upper()
             det = evaluate_all(ev)
             if args.from_vcf or not args.genes_tsv:
                 tier = _CLASS_RANK.get(classify(det).class_, 2)
@@ -247,12 +250,45 @@ def cmd_assess(args: argparse.Namespace) -> int:
         # fall back to the deterministic criteria). ------------------------
         llm_status = "disabled"
         assistant: list[dict] | None = None
-        review_order: range | list[int]
+        review_order: list[int]
+        leading_exp_obj: dict | None = None
         if args.from_vcf or not args.genes_tsv:
-            review_order = list(range(len(pairs)))
+            review_order = sorted(
+                range(len(pairs)),
+                key=lambda i: (
+                    _CLASS_RANK.get(classify(pairs[i][2]).class_, 9),
+                    -classify(pairs[i][2]).points,
+                    str(pairs[i][0].get("gene", "")),
+                ),
+            )
+            path_exps = [e for e in expansions if e.get("status") == "pathogenic_range"]
+            if path_exps and (not pairs or _CLASS_RANK.get(classify(pairs[review_order[0]][2]).class_, 9) > 0):
+                leading_exp_obj = path_exps[0]
         else:
-            # review priority follows the re-ranked candidate order
-            review_order = sorted(range(len(pairs)), key=lambda i: rank_key(pairs[i][0]))
+            lead_pre, _ = choose_leading(raw_candidates, expansions)
+            if lead_pre is not None and lead_pre[0] == "expansion":
+                leading_exp_obj = lead_pre[1]
+            lead_snv_key = (
+                _candidate_key(lead_pre[1])
+                if lead_pre is not None and lead_pre[0] == "snv"
+                else None
+            )
+            review_order = sorted(
+                range(len(pairs)),
+                key=lambda i: (
+                    0 if (lead_snv_key is not None and pairs[i][4] == lead_snv_key) else 1,
+                    rank_key(pairs[i][0]),
+                    _CLASS_RANK.get(classify(pairs[i][2]).class_, 9),
+                    -classify(pairs[i][2]).points,
+                ),
+            )
+
+        for e in expansions:
+            e["agent_status"] = "not_reviewed"
+            e["adjusted_by_agent"] = []
+            e["agent_rationale"] = None
+            e["agent_narrative"] = None
+
         if not args.no_llm:
             if getattr(args, "sample", None):
                 os.environ.setdefault("ACMG_SAMPLE", str(args.sample))
@@ -265,13 +301,27 @@ def cmd_assess(args: argparse.Namespace) -> int:
             if backend is not None:
                 llm_info["backend"] = str(getattr(backend, "backend_name", "llama"))
                 llm_info["model"] = getattr(backend, "model_name", None)
+                for e in expansions:
+                    if e is not leading_exp_obj:
+                        e["agent_status"] = "skipped"
                 ordered = [pairs[i] for i in review_order]
                 agent_cands = [
-                    {"evidence": ev, "criteria": list(det), "tier": tier, "rank": r}
+                    {
+                        "evidence": ev,
+                        "criteria": list(det),
+                        "tier": tier,
+                        "rank": r,
+                        "is_leading": (r == 0 and leading_exp_obj is None),
+                        "gene": ev.gene,
+                    }
                     for r, (_c, ev, det, tier, _k) in enumerate(ordered)
                 ]
                 try:
-                    _reviewed, llm_status = run_all(agent_cands, backend)
+                    _reviewed, llm_status = run_all(
+                        agent_cands,
+                        backend,
+                        leading_expansion=leading_exp_obj,
+                    )
                     assistant = agent_cands
                 except Exception as exc:
                     errors.append(f"LLM layer failed: {exc}")
@@ -288,12 +338,13 @@ def cmd_assess(args: argparse.Namespace) -> int:
                 agent = assistant[idx_pos]
                 final_criteria = agent["criteria"]
                 adjusted = list(agent.get("adjusted") or [])
-                ok = agent.get("agent_status") == "ok"
-                agent_rationale = agent.get("agent_rationale") if ok else None
-                agent_narrative = agent.get("narrative") if ok else None
+                agent_status = str(agent.get("agent_status") or "skipped")
+                agent_rationale = agent.get("agent_rationale")
+                agent_narrative = agent.get("narrative") if agent_status == "ok" else None
             else:
                 final_criteria = det
                 adjusted = []
+                agent_status = "not_reviewed"
                 agent_rationale = None
                 agent_narrative = None
             clf = classify(final_criteria)
@@ -306,13 +357,42 @@ def cmd_assess(args: argparse.Namespace) -> int:
                 adjusted_codes=adjusted,
                 agent_rationale=agent_rationale,
                 agent_narrative=agent_narrative,
+                agent_status=agent_status,
             )
             assessed_list.append(item)
             assessed_by_key[key] = item
 
         if args.from_vcf or not args.genes_tsv:
             assessed_list.sort(key=lambda a: (_CLASS_RANK.get(a["classification"], 9), -a["points"], a["gene"]))
-            leading_dict = assessed_list[0] if assessed_list else None
+            if leading_exp_obj is not None:
+                exp = leading_exp_obj
+                leading_dict = {
+                    "kind": "expansion",
+                    "gene": exp["gene"],
+                    "variant": f"{exp['gene']} repeat ({exp['genotypes']})",
+                    "hgvs": None,
+                    "zygosity": "het" if exp["allele1"] != exp["allele2"] else "hom",
+                    "moi": exp["moi"],
+                    "disease": exp["disease"],
+                    "classification": "Pathogenic",
+                    "points": None,
+                    "rule_based_class": "Pathogenic",
+                    "conflict": False,
+                    "allele1": exp["allele1"],
+                    "allele2": exp["allele2"],
+                    "genotypes": exp["genotypes"],
+                    "ci": exp["ci"],
+                    "normal_max": exp["normal_max"],
+                    "pathogenic_min": exp["pathogenic_min"],
+                    "ranges": exp.get("ranges"),
+                    "status": exp["status"],
+                    "agent_status": exp.get("agent_status", "not_reviewed"),
+                    "adjusted_by_agent": list(exp.get("adjusted_by_agent") or []),
+                    "agent_rationale": exp.get("agent_rationale"),
+                    "agent_narrative": exp.get("agent_narrative"),
+                }
+            else:
+                leading_dict = assessed_list[0] if assessed_list else None
             near_ties_list: list[dict] = []
         else:
             lead_choice, alt_cands = choose_leading(raw_candidates, expansions)
@@ -345,7 +425,12 @@ def cmd_assess(args: argparse.Namespace) -> int:
                     "ci": exp["ci"],
                     "normal_max": exp["normal_max"],
                     "pathogenic_min": exp["pathogenic_min"],
+                    "ranges": exp.get("ranges"),
                     "status": exp["status"],
+                    "agent_status": exp.get("agent_status", "not_reviewed"),
+                    "adjusted_by_agent": list(exp.get("adjusted_by_agent") or []),
+                    "agent_rationale": exp.get("agent_rationale"),
+                    "agent_narrative": exp.get("agent_narrative"),
                 }
             else:
                 lead_c = lead_choice[1]
@@ -370,6 +455,10 @@ def cmd_assess(args: argparse.Namespace) -> int:
                         "points": lead_item["points"],
                         "rule_based_class": lead_item["rule_based_class"],
                         "conflict": lead_item["conflict"],
+                        "agent_status": lead_item.get("agent_status"),
+                        "adjusted_by_agent": lead_item.get("adjusted_by_agent", []),
+                        "agent_rationale": lead_item.get("agent_rationale"),
+                        "agent_narrative": lead_item.get("agent_narrative"),
                     }
                 else:
                     leading_dict = None
@@ -392,7 +481,38 @@ def cmd_assess(args: argparse.Namespace) -> int:
                         "points": aitem["points"],
                     })
 
+        # Populate llm.reviewed, llm.unreviewed, and llm.statuses in rank order (leading first)
+        reviewed_genes: list[str] = []
+        unreviewed_genes: list[str] = []
+        status_map: dict[str, str] = {}
+        ordered_items_for_llm: list[dict] = []
+        if isinstance(leading_dict, dict) and leading_dict.get("kind") == "expansion":
+            ordered_items_for_llm.append(leading_dict)
+        ordered_items_for_llm.extend(assessed_list)
+        for item in ordered_items_for_llm:
+            g = str(item.get("gene") or "")
+            st = str(item.get("agent_status") or "not_reviewed")
+            if not g:
+                continue
+            if g not in status_map or st == "ok":
+                status_map[g] = st
+            if st == "ok":
+                if g not in reviewed_genes:
+                    reviewed_genes.append(g)
+        for item in ordered_items_for_llm:
+            g = str(item.get("gene") or "")
+            if g and g not in reviewed_genes and g not in unreviewed_genes:
+                unreviewed_genes.append(g)
+        llm_info["reviewed"] = reviewed_genes
+        llm_info["unreviewed"] = unreviewed_genes
+        llm_info["statuses"] = status_map
+
         narrative = build_deterministic_narrative(leading_dict, near_ties_list, assessed_list, expansions)
+        top_agent_narrative = (
+            leading_dict.get("agent_narrative")
+            if isinstance(leading_dict, dict)
+            else (assessed_list[0].get("agent_narrative") if assessed_list else None)
+        )
         phenotype = (args.phenotype or "")
         data = {
             "schema_version": 1,
@@ -407,6 +527,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
             "candidates": assessed_list,
             "expansions": expansions,
             "narrative": narrative,
+            "agent_narrative": top_agent_narrative,
             "errors": errors,
         }
     except Exception as exc:
@@ -425,6 +546,12 @@ def cmd_assess(args: argparse.Namespace) -> int:
 
     write_json(args.output_json, data)
     write_markdown(args.output_md, data)
+    pdf_path = (
+        Path(args.output_pdf)
+        if getattr(args, "output_pdf", None)
+        else Path(args.output_md).with_suffix(".pdf")
+    )
+    safe_write_pdf(pdf_path, data)
     return 0
 
 
@@ -439,7 +566,7 @@ def build_parser() -> argparse.ArgumentParser:
     ext.add_argument("--top", type=int, default=15)
     ext.add_argument("--output-vcf", required=True)
 
-    ass = sub.add_parser("assess", help="Evaluate ACMG criteria and emit JSON + Markdown reports")
+    ass = sub.add_parser("assess", help="Evaluate ACMG criteria and emit JSON + Markdown + PDF reports")
     ass.add_argument("--genes-tsv", default=None)
     ass.add_argument("--variants-tsv", default=None)
     ass.add_argument("--eh-json", default=None)
@@ -459,6 +586,7 @@ def build_parser() -> argparse.ArgumentParser:
     ass.add_argument("--top", type=int, default=15)
     ass.add_argument("--output-md", required=True)
     ass.add_argument("--output-json", required=True)
+    ass.add_argument("--output-pdf", default=None, help="Output PDF path (defaults to <output-md>.pdf)")
 
     return p
 
