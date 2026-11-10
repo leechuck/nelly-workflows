@@ -171,6 +171,9 @@ outputs:
   output_acmg_report:
     type: File
     outputSource: acmg-agent/acmg_report
+  output_acmg_pdf:
+    type: File?
+    outputSource: acmg-agent/acmg_pdf
 
 steps:
   bcftools-concat:
@@ -299,5 +302,5 @@ steps:
       llm_model: llm_model
       llm_api_key: llm_api_key
       llm_max_tokens: llm_max_tokens
-    out: [acmg_json, acmg_report]
+    out: [acmg_json, acmg_report, acmg_pdf]
     run: ../acmg-agent.cwl
