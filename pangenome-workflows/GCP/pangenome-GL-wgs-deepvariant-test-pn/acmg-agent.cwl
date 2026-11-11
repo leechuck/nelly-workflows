@@ -14,6 +14,11 @@ class: CommandLineTool
 # and never appears in argv.
 baseCommand: [python, -m, acmg_agent.cli, assess]
 requirements:
+  # The LLM reviewer calls an OpenAI-compatible endpoint; without this, Docker-based
+  # runners (Arvados, cwltool --docker) start the container with --net=none and the
+  # step silently falls back to the deterministic result (llm.status failed).
+  NetworkAccess:
+    networkAccess: true
   InlineJavascriptRequirement: {}
   ResourceRequirement:
     coresMin: 8

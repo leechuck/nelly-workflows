@@ -468,19 +468,21 @@ The ACMG agent (`acmg-agent.cwl`) reviews candidate variants through a bounded t
 | **Local CPU GGUF (`Qwen2.5-7B`)** | Built during WP4 prototyping | 2,037 s (timed out) | 0% (timeouts/rejections) | `llm.status: "partial"`. Exceeds 6-min per-variant budget on CPU. |
 | **Deterministic Engine Only (`"off"`)** | Set `llm_backend: "off"` | **< 2 s** | **100% deterministic** | `llm.status: "disabled"`. 100% reproducible ClinGen SVI rule-based classification; no narrative LLM summary. |
 
-#### Deployment Recommendations for Dung
-1. **Option 1 (Fastest & Best): Cloud GPU Instance for vLLM.**
-   - Deploy an AWS `g5.xlarge` (NVIDIA A10G 24GB, ~$1.00/hr) or OCI `VM.GPU.A10.1`.
-   - Run vLLM container:
-     ```bash
-     docker run -d --gpus all -p 8000:8000 --ipc=host vllm/vllm-openai:latest \
-       --model Qwen/Qwen2.5-14B-Instruct --max-model-len 16384
-     ```
-   - Set `llm_backend: "openai"`, `llm_endpoint: "http://<GPU_IP>:8000/v1"`, `llm_model: "Qwen/Qwen2.5-14B-Instruct"`.
-2. **Option 2: VPN Tunnel to KAUST `unimatrix01`.**
-   - Point to `http://unimatrix01.kaust.edu.sa:8000/v1` with model `qwen3.8-27b` over a site-to-site VPN.
-3. **Option 3: Deterministic Fallback (`llm_backend: "off"`).**
-   - For high-throughput cloud batch processing without GPU instances, set `llm_backend: "off"`. The deterministic engine provides 100% compliant ClinGen SVI classifications in 2 seconds per patient.
+#### Deployment options for the LLM endpoint
+
+The step needs any OpenAI-compatible chat-completions endpoint with tool calling. It is configured by workflow inputs only: `llm_backend: openai`, `llm_endpoint`, `llm_model`, `llm_api_key` (inject at submit time; templates contain `"FROM-ENV"`), `llm_max_tokens`. `acmg-agent.cwl` declares `NetworkAccess: true`; the runner must allow outbound traffic from that container. All measurements above were made with **Qwen3.8-27B-FP8 (`qwen3.8-27b`) on vLLM 0.28.0**; no other model has been validated with the reviewer contract.
+
+1. **Use the lab endpoint at KAUST (no GPU needed in the cloud).** `http://unimatrix01.kaust.edu.sa:8000/v1`, model `qwen3.8-27b`. It is reachable on the KAUST network/VPN and on the lab tailnet (`http://unimatrix01.tail3b591c.ts.net:8000/v1`), so a cloud VM either joins the tailnet (Tailscale client on the runner node) or a VPN to KAUST. Dung needs his own key: Robert issues it on unimatrix01 with `sudo llm-key add <name>` (keys are per user, never shared). Capacity is two vLLM nodes shared by the lab; run ACMG steps one sample at a time, otherwise reviews hit the 6-min per-variant budget and fall back (`llm.status: partial`). Patient-derived evidence (variants, HPO labels) then leaves the cloud for KAUST — check this is acceptable for the data agreement.
+2. **Self-host the same model in the cloud.** Identical flags to the lab server:
+   ```bash
+   docker run -d --gpus all --ipc=host -p 8000:8000 vllm/vllm-openai:v0.28.0 \
+     --model Qwen/Qwen3.8-27B-FP8 --served-model-name qwen3.8-27b \
+     --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder \
+     --kv-cache-dtype fp8 --max-model-len 65536 --api-key "$VLLM_API_KEY"
+   ```
+   Needs ≥ 48 GB GPU memory in total (27 GB FP8 weights + KV cache): one L40S 48 GB or A100/H100 80 GB, or two 24 GB GPUs with `--tensor-parallel-size 2` (the lab runs it on 2× RTX 4090). Instance families to look at (verify current names/prices): AWS `g6e` (L40S) or `p4d/p5`; OCI `VM.GPU.A10.2` (2× A10, TP=2) or L40S/A100 shapes. The GPU is only needed during the ACMG step (21–43 min per sample), so start it on demand or keep it in a small autoscaling group. Point `llm_endpoint` at it and keep `llm_model: qwen3.8-27b`.
+3. **Commercial hosted API.** Technically works (any OpenAI-compatible provider serving a tool-calling model), but sends patient-derived data to a third party and the model is unvalidated. Not recommended without a data-governance decision.
+4. **No LLM (`llm_backend: off`).** The ACMG classification and the PDF are identical; only Appendix A (reviewer commentary) is empty. The baked CPU GGUF (`llm_backend: llama`) is too slow to be useful (3B and 7B time out on CPU, see table).
 
 ---
 
