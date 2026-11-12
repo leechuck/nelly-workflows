@@ -1,0 +1,55 @@
+{
+  "sample_name": "HG003",
+  "ref_prefix": "GRCh38",
+  "graph": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/graph/ksa_hg38.gbz"
+  },
+  "dist": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/graph/ksa_hg38.dist"
+  },
+  "min": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/graph/ksa_hg38.min"
+  },
+  "ref": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/graph/hg38.fa",
+    "secondaryFiles": [
+      {
+        "class": "File",
+        "path": "/data/nelly-local/inputs/graph/hg38.fa.fai"
+      }
+    ]
+  },
+  "reads1": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/giab/hg003/HG003_R1.fastq.gz"
+  },
+  "reads2": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/giab/hg003/HG003_R2.fastq.gz"
+  },
+  "aligned_bam_output": "HG003.legacy.aligned.bam",
+  "dv_model_type": "WGS",
+  "dv_output_vcf": "HG003.legacy.dv.vcf.gz",
+  "dv_output_gvcf": "HG003.legacy.dv.gvcf.gz",
+  "eh_output_prefix": "HG003.legacy.eh",
+  "eh_sex": "male",
+  "truth_vcf": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/giab/truth/HG003_GRCh38_1_22_v4.2.1_benchmark.vcf.gz",
+    "secondaryFiles": [
+      {
+        "class": "File",
+        "path": "/data/nelly-local/inputs/giab/truth/HG003_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi"
+      }
+    ]
+  },
+  "confident_bed": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/giab/truth/HG003_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed"
+  },
+  "happy_prefix": "HG003.legacy.happy"
+}

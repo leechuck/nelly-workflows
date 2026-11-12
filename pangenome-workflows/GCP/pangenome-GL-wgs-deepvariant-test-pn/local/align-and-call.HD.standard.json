@@ -1,0 +1,33 @@
+{
+  "reads1": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/patients/hd/reads1.fastq.gz"
+  },
+  "reads2": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/patients/hd/reads2.fastq.gz"
+  },
+  "graph": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/graph/ksa_hg38.gbz"
+  },
+  "hapl": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/graph/ksa_hg38.hapl"
+  },
+  "ref_prefix": "GRCh38",
+  "ref": {
+    "class": "File",
+    "path": "/data/nelly-local/inputs/graph/hg38.fa",
+    "secondaryFiles": [
+      {
+        "class": "File",
+        "path": "/data/nelly-local/inputs/graph/hg38.fa.fai"
+      }
+    ]
+  },
+  "sample_name": "sample",
+  "dv_mode": "standard",
+  "eh_sex": "male",
+  "eh_output_prefix": "eh_repeats"
+}

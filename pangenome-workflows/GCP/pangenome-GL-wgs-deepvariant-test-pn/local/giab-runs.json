@@ -1,0 +1,32 @@
+[
+  {
+    "sample": "HG003",
+    "graph": "Saudi (KSA)",
+    "caller": "vg 1.78 + DV 1.10 (standard)",
+    "summary_csv": "local/giab-summaries/HG003.standard.happy.summary.csv"
+  },
+  {
+    "sample": "HG003",
+    "graph": "Saudi (KSA)",
+    "caller": "vg 1.78 + PADV 1.10 (pangenome_aware)",
+    "summary_csv": "local/giab-summaries/HG003.pangenome_aware.happy.summary.csv"
+  },
+  {
+    "sample": "HG003",
+    "graph": "Saudi (KSA)",
+    "caller": "legacy (vg 1.54 + DV 1.6)",
+    "summary_csv": "local/giab-summaries/HG003.legacy.happy.summary.csv"
+  },
+  {
+    "sample": "HG002",
+    "graph": "Saudi (KSA)",
+    "caller": "vg 1.78 + DV 1.10 (standard)",
+    "summary_csv": "local/giab-summaries/HG002.standard.happy.summary.csv"
+  },
+  {
+    "sample": "HG002",
+    "graph": "Saudi (KSA)",
+    "caller": "vg 1.78 + PADV 1.10 (pangenome_aware)",
+    "summary_csv": "local/giab-summaries/HG002.pangenome_aware.happy.summary.csv"
+  }
+]
