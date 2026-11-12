@@ -3,6 +3,14 @@
 All notable changes to the annotation/interpretation tail of this workflow
 (`main-vg.cwl`: VEP → slivar → acmg-agent) are documented here.
 
+### R12 (2026-11-12) — deployment safety and reviewer output policy (`nelly-acmg-agent:v8`)
+
+- The LLM reviewer may not recommend clinical actions (testing, counselling, referral, management, surveillance). The rule is in all system prompts; a post-check (`acmg_agent/policy.py`) gives the model one rewrite turn and otherwise removes the sentences, sets `narrative_redacted: true` and prints a note in the Markdown and PDF. Found on the real Huntington run ("…amenable to genetic counseling regarding predictive testing…").
+- LLM failures are visible: before any review the step checks the key (empty or the `FROM-ENV` placeholder) and `GET /models`; a missing, rejected (HTTP 401/403) or unreachable endpoint gives `llm.status: failed` with a plain `llm.error`, shown in the JSON, Markdown, PDF and stderr, and no per-candidate waits. The step still exits 0 with the deterministic result.
+- `llm_api_key` is a `cwltool:Secrets` input in `main-vg.cwl` and `acmg-agent.cwl` (Arvados keeps it in secret mounts).
+- `submit.sh` replaces `"llm_api_key": "FROM-ENV"` with `$ACMG_LLM_API_KEY` or `~/.config/borg-llm/api-key` in a mode-600 temporary copy (deleted after submission; exit 2 if no key and `llm_backend` is `openai`), and reads `ARVADOS_API_HOST`/`ARVADOS_API_TOKEN` from the environment, falling back to cborg.
+- Image `nelly-acmg-agent:v8`.
+
 ### R6 (2026-11-09 evening) — population frequency source
 
 - `acmg_agent` now takes the maximum gnomAD allele frequency over NON-bottlenecked populations (AFR, AMR, EAS, NFE, SAS; exomes and genomes) for PM2/BS1/BA1, per ClinGen SVI practice; founder/bottlenecked populations (ASJ, FIN, AMI, MID, REMAINING) are reported as context (`max_af_any_pop`). Found on the first real patient run: VEP `MAX_AF` for HEXA c.1421+1G>C was the Ashkenazi founder AF 0.0033, which had demoted HEXA to Likely pathogenic; with NFE 6.3e-06 it is Pathogenic (10 pts). Image `nelly-acmg-agent:v3` (code is baked in).

@@ -534,7 +534,7 @@ def render_pdf_html(data: dict) -> str:
     image_tag = _esc(
         data.get("image_tag")
         or os.environ.get("ACMG_IMAGE_TAG")
-        or "nelly-acmg-agent:v7"
+        or "nelly-acmg-agent:v8"
     )
 
     lead = data.get("leading_candidate")

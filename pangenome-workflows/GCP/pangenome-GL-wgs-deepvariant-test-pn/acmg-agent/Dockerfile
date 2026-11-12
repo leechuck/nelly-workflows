@@ -1,7 +1,7 @@
-# nelly-acmg-agent:v7 -- ACMG evaluation agent runtime + WeasyPrint PDF renderer.
+# nelly-acmg-agent:v8 -- ACMG evaluation agent runtime + WeasyPrint PDF renderer.
 #
 # Build context is the acmg-agent/ directory:
-#   docker build -t nelly-acmg-agent:v7 acmg-agent/
+#   docker build -t nelly-acmg-agent:v8 acmg-agent/
 # (MODEL_URL defaults to bartowski's Qwen2.5-3B-Instruct Q4_K_M GGUF, ~2 GB;
 # build on ws, not the laptop. In production the step defaults to the lab
 # unimatrix01 Qwen3.8-27B endpoint via ACMG_LLM_BACKEND=openai, keeping the
@@ -54,7 +54,7 @@ COPY acmg_agent /app/acmg_agent
 ENV PYTHONPATH=/app \
     ACMG_MODEL_PATH=/model/model.gguf \
     ACMG_LLM_BACKEND=llama \
-    ACMG_IMAGE_TAG=nelly-acmg-agent:v7
+    ACMG_IMAGE_TAG=nelly-acmg-agent:v8
 
 # No ENTRYPOINT. The CWL tool drives: `python -m acmg_agent.cli assess|extract`.
 CMD ["python"]

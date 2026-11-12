@@ -552,7 +552,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
         )
         phenotype = (args.phenotype or "")
         pipeline_version = os.environ.get("ACMG_PIPELINE_VERSION") or "nelly-workflows modernise-2026-11"
-        image_tag = os.environ.get("ACMG_IMAGE_TAG") or "nelly-acmg-agent:v7"
+        image_tag = os.environ.get("ACMG_IMAGE_TAG") or "nelly-acmg-agent:v8"
         raw_patient_id = str(getattr(args, "patient_id", "") or os.environ.get("ACMG_PATIENT_ID", "")).strip()
         patient_id = raw_patient_id or str(args.sample or "proband")
         data = {
