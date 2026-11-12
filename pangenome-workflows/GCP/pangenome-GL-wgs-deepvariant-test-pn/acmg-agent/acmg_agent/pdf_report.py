@@ -545,7 +545,7 @@ def render_pdf_html(data: dict) -> str:
     llm_backend = _esc(llm.get("backend") or "none")
     llm_model = _esc(llm.get("model") or "none")
     llm_status = _esc(llm.get("status") or "disabled")
-    llm_error = _esc(llm.get("error") or "")
+    llm_error = _esc(llm["error"]) if llm.get("error") else ""
     llm_error_html = (
         f'<p class="llm-error"><strong>LLM review not run:</strong> {llm_error}. '
         f'All results in this report are the deterministic engine result.</p>'

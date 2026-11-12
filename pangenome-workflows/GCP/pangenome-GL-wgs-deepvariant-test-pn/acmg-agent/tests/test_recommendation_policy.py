@@ -105,6 +105,8 @@ def test_retry_gives_clean_text(tmp_path, monkeypatch, case, gene):
     assert lead["agent_narrative"] == f"Neutral narrative for {gene}."
     assert not lead.get("narrative_redacted")
     assert REDACTION_NOTE not in md
+    assert data["llm"].get("error") is None
+    assert "LLM review not run" not in pdf and "LLM review not run" not in md
 
 
 @pytest.mark.parametrize("case,gene", [("TS2", "HEXA"), ("HD2", "HTT")])
