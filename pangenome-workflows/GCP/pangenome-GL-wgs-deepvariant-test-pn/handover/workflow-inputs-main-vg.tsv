@@ -43,5 +43,5 @@ acmg_top_candidates	int	10	main-vg.cwl default	Number of candidate genes evaluat
 llm_backend	string	"openai"	Configuration ("openai" | "llama" | "off")	ACMG agent LLM backend selector
 llm_endpoint	string	"http://unimatrix01.kaust.edu.sa:8000/v1"	Configuration	OpenAI-compatible vLLM API endpoint URL
 llm_model	string	"qwen3.8-27b"	Configuration	Model identifier on the OpenAI-compatible endpoint
-llm_api_key	string	""	"FROM-ENV" in template JSONs	Bearer token for the LLM endpoint (passed via ACMG_LLM_API_KEY)
+llm_api_key	string	""	"FROM-ENV" in template JSONs	Bearer token for the LLM endpoint; CWL secret (cwltool:Secrets); submit.sh / local/run.sh replace FROM-ENV; passed to the container only as ACMG_LLM_API_KEY
 llm_max_tokens	int	4096	main-vg.cwl default	Maximum completion tokens per turn for the LLM
