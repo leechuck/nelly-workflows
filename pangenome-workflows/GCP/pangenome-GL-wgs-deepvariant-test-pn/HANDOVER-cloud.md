@@ -386,7 +386,7 @@ Every observed measurement in the table below originates from a named, verified 
 3. **Historic & Benchmark References:**
    - **cborg 26–27 Oct 2026 Runs:** Historic production runs of `main-vg.cwl` at commit `00c199d` for Tay-Sachs (`TS`) and Huntington (`HD`) on Arvados `cborg` (10-vcpu / 90 GiB RAM nodes, vg 1.54 + DeepVariant 1.6). Wall times recorded by Arvados `crunch-run`; peak RSS was not logged by Arvados (only requested RAM).
    - **Workstation `ws` Benchmarks:** WP1/WP4b test slices (2M read pairs, chr20:1-10M test slices).
-4. **Still not measured:** `pangenome-aware-deepvariant` wall time at 30x outside the IBEX GIAB runs (TODO(supervisor)); `hap.py` memory under Docker.
+4. **Pangenome-aware DV at 30x:** 7 h 38 m (HG002) and 8 h 20 m (HG003) Slurm elapsed for PADV calling from an existing CRAM, 24 cores (IBEX 55450216 / 55450215, including input staging), against 3.0 h for standard DV. **Not measured:** `hap.py` memory under Docker.
 
 | Step Name | Tool CWL | Docker Image | `coresMin` | `ramMin` (MiB) | `tmpdirMin` (MB) | Observed Wall Time (Named Source) | Observed Peak Process RSS (Named Source) | Measurement Status & Sizing Notes |
 |---|---|---|---:|---:|---:|---|---|---|
@@ -534,7 +534,11 @@ All runs were local (no Arvados): cwltool 3.3 with Singularity on IBEX (Slurm), 
 | LLM failure handling (v8) | ws, cwltool + Docker, `llm_api_key: FROM-ENV` | exit 0, `llm.status: failed`, `llm.error` shown in PDF, HEXA still Pathogenic, key not in logs |
 | GIAB HG003, standard DV 1.10 | IBEX, hap.py vcfeval vs v4.2.1, PASS | SNP F1 0.9956 (R 0.9946 / P 0.9966), INDEL F1 0.9941 |
 | GIAB HG002, standard DV 1.10 | same | SNP F1 0.9958 (R 0.9945 / P 0.9971), INDEL F1 0.9925 |
-| GIAB HG002/HG003 pangenome-aware DV, HG003 legacy (vg 1.54 + DV 1.6) | IBEX | TODO(supervisor) |
+| GIAB HG003, pangenome-aware DV 1.10 | same | SNP F1 0.9922 (R 0.9877 / P 0.9968), INDEL F1 0.9934 |
+| GIAB HG002, pangenome-aware DV 1.10 | same | SNP F1 0.9927 (R 0.9881 / P 0.9973), INDEL F1 0.9929 |
+| GIAB HG003, legacy stack (vg 1.54 + DV 1.6), same reads and harness | same | SNP F1 0.9946 (R 0.9930 / P 0.9962), INDEL F1 0.9917 |
+
+**`dv_mode` decision:** keep `standard` (the default). It beats the legacy stack on both SNPs (+0.0010 F1) and indels (+0.0024). Pangenome-aware DV loses about 0.7 % SNP recall in our setup (no `/dev/shm`, 4 shards) and runs longer, so it stays opt-in until the cause is understood.
 | Offline tests | pipeline dir `python3 -m pytest -q --ignore=acmg-agent`; `acmg-agent/` `uv run pytest -q` | all pass (counts in CHANGELOG R12) |
 | CWL | `cwltool --validate` on every file, `cwltool --pack main-vg.cwl` | clean |
 
@@ -627,4 +631,4 @@ Follow this sequence to deploy and verify the workflow on AWS or OCI:
     ```bash
     python3 benchmark/collect.py --runs runs.json --out benchmark/results-2026-11.md
     ```
-  - Expect HG003 standard-mode SNP F1 ≈ 0.9956 and INDEL F1 ≈ 0.9941 (our measurement; §7.1). Compare pangenome-aware vs standard to choose the default `dv_mode`.
+  - Expect HG003 standard-mode SNP F1 ≈ 0.9956 and INDEL F1 ≈ 0.9941 (our measurement; §7.1). `standard` is the default; pangenome-aware scored lower (§7.1).
