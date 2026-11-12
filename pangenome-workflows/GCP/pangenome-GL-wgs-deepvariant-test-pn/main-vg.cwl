@@ -1,5 +1,12 @@
 cwlVersion: v1.2
 class: Workflow
+$namespaces:
+  cwltool: "http://commonwl.org/cwltool#"
+hints:
+  # Keeps the LLM key out of stored inputs and logs (cwltool masks it; Arvados
+  # stores it in secret_mounts instead of the container request's visible inputs).
+  cwltool:Secrets:
+    secrets: [llm_api_key]
 requirements:
   InlineJavascriptRequirement: {}
   SubworkflowFeatureRequirement: {}

@@ -13,6 +13,13 @@ class: CommandLineTool
 # fallback inside the image). The API key travels only via EnvVarRequirement
 # and never appears in argv.
 baseCommand: [python, -m, acmg_agent.cli, assess]
+$namespaces:
+  cwltool: "http://commonwl.org/cwltool#"
+hints:
+  # Keeps the LLM key out of stored inputs and logs (cwltool masks it; Arvados
+  # stores it in secret_mounts instead of the container request's visible inputs).
+  cwltool:Secrets:
+    secrets: [llm_api_key]
 requirements:
   # The LLM reviewer calls an OpenAI-compatible endpoint; without this, Docker-based
   # runners (Arvados, cwltool --docker) start the container with --net=none and the
