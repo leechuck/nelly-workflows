@@ -32,6 +32,7 @@ from acmg_agent.llm_backends import (  # noqa: F401 (re-export Message for calle
     append_llm_trace,
 )
 from acmg_agent.model import Criterion, Evidence
+from acmg_agent.policy import RECOMMENDATION_RULE, find_recommendations, strip_recommendations, violation_message
 from acmg_agent.tools import (
     REPEAT_READ_TOOL,
     REPEAT_SUBMIT_TOOL,
@@ -94,7 +95,8 @@ AGENT_SYSTEM_PROMPT = (
     "homozygous (zygosity='hom') variants in AR genes even when other_var_in_gene "
     "is empty. Keep internal reasoning concise so tool calls finish promptly.\n"
     "If you cannot improve the engine's assessment with pack evidence, submit "
-    "no changes and say so in the rationale."
+    "no changes and say so in the rationale.\n"
+    "8. " + RECOMMENDATION_RULE
 )
 
 
@@ -107,6 +109,7 @@ class AgentResult:
     narrative: str | None = None
     adjusted: list[str] = field(default_factory=list)
     n_tool_calls: int = 0
+    redacted: bool = False        # sentences removed under the recommendation policy
 
 
 # --------------------------------------------------------------------------
@@ -121,7 +124,7 @@ NARRATIVE_SYSTEM_PROMPT = (
     "classification is decided by the calling code, so phrase findings evidence "
     "in neutral terms. The criteria list below is already finalized: keep "
     "internal reasoning brief and output a complete paragraph ending with a "
-    "period (.)."
+    "period (.). " + RECOMMENDATION_RULE
 )
 
 TERMINAL_PUNCT_RE = re.compile(r'[.!?]["\'”’)\]]*\s*$')
@@ -403,14 +406,16 @@ def run_agent(
                     ok, reason = validate_submission(det, tc.arguments, allowed_numbers=allowed_numbers)
                     if ok:
                         merged, adjusted = merge_criteria(det, tc.arguments)
-                        narrative, is_truncated = _generate_narrative_with_status(backend, ev, merged, deadline)
+                        narrative, is_truncated, redacted = _generate_narrative_with_status(backend, ev, merged, deadline)
+                        rationale, rat_redacted = strip_recommendations(str(tc.arguments.get("rationale", "")).strip())
                         result = AgentResult(
                             criteria=merged,
-                            rationale=str(tc.arguments.get("rationale", "")).strip(),
+                            rationale=rationale or "",
                             status="ok_truncated" if is_truncated else "ok",
                             narrative=narrative,
                             adjusted=adjusted,
                             n_tool_calls=calls,
+                            redacted=redacted or rat_redacted,
                         )
                         return result
                     messages.append(Message(role="tool", content=f"SUBMISSION REJECTED: {reason}", name=SUBMIT_TOOL, tool_call_id=tc.id))
@@ -437,6 +442,42 @@ def pack_allowed_numbers(pack: EvidencePack, det: list[Criterion]) -> set[float]
 
 
 def _generate_narrative_with_status(
+    backend: Any, ev: Evidence, final_criteria: list[Criterion], deadline: float
+) -> tuple[str | None, bool, bool]:
+    """Narrative plus the recommendation policy.
+
+    Returns ``(narrative, is_truncated, redacted)``. If the narrative recommends a
+    clinical action, the model gets one rewrite turn naming the offending
+    sentences; if the rewrite still violates (or fails), the sentences are removed.
+    """
+    text, truncated = _generate_narrative_raw(backend, ev, final_criteria, deadline)
+    bad = find_recommendations(text)
+    if not bad:
+        return text, truncated, False
+    if time.monotonic() < deadline:
+        try:
+            reply = _call_backend_chat(
+                backend,
+                [
+                    Message(role="system", content=NARRATIVE_SYSTEM_PROMPT),
+                    Message(role="user", content=f"Narrative for candidate gene {ev.gene}:\n{text}"),
+                    Message(role="user", content=violation_message(bad)),
+                ],
+                tools=[],
+                max_tokens=max(int(getattr(backend, "max_tokens", 4096) or 4096) * 2, 8192),
+                trace_meta={"gene": ev.gene, "phase": "narrative_policy_retry"},
+                attempt="policy_retry",
+            )
+            text2 = (reply.content or "").strip() if not reply.tool_calls else ""
+            if text2 and not find_recommendations(text2) and _ends_with_terminal_punctuation(text2):
+                return text2, False, False
+        except Exception:
+            pass
+    clean, _removed = strip_recommendations(text)
+    return clean, truncated, True
+
+
+def _generate_narrative_raw(
     backend: Any, ev: Evidence, final_criteria: list[Criterion], deadline: float
 ) -> tuple[str | None, bool]:
     """Generate the per-candidate clinical summary paragraph and check for truncation.
@@ -536,7 +577,7 @@ def _generate_narrative_with_status(
 def _generate_narrative(
     backend: Any, ev: Evidence, final_criteria: list[Criterion], deadline: float
 ) -> str | None:
-    narrative, _truncated = _generate_narrative_with_status(backend, ev, final_criteria, deadline)
+    narrative, _truncated, _redacted = _generate_narrative_with_status(backend, ev, final_criteria, deadline)
     return narrative
 
 
@@ -553,7 +594,8 @@ EXPANSION_SYSTEM_PROMPT = (
     "3. Mention only the repeat expansion gene and values present in the RepeatCall "
     "pack (repeat alleles, confidence interval, normal/intermediate/pathogenic "
     "ranges, mode of inheritance, and disease). Do not cite PMIDs, external "
-    "literature, or any number absent from the pack."
+    "literature, or any number absent from the pack.\n"
+    "4. " + RECOMMENDATION_RULE
 )
 
 
@@ -620,6 +662,8 @@ def run_expansion_agent(
     deadline = time.monotonic() + per_variant_seconds
     calls = 0
 
+    policy_retry_used = False
+
     def fallback(reason: str, status: str) -> AgentResult:
         return AgentResult(
             criteria=[],
@@ -656,14 +700,20 @@ def run_expansion_agent(
                     allowed_numbers=allowed_numbers,
                     forbidden_genes=forbidden_genes,
                 )
+                bad = find_recommendations(content_text) if ok else []
+                if ok and bad and not policy_retry_used:
+                    policy_retry_used = True
+                    ok, reason = False, violation_message(bad)
                 if ok:
+                    clean, red = strip_recommendations(content_text)
                     return AgentResult(
                         criteria=[],
-                        rationale=content_text,
+                        rationale=clean or "",
                         status="ok",
-                        narrative=content_text,
+                        narrative=clean,
                         adjusted=[],
                         n_tool_calls=calls,
+                        redacted=red,
                     )
                 messages.append(Message(role="assistant", content=reply.content))
                 messages.append(Message(
@@ -700,15 +750,21 @@ def run_expansion_agent(
                         allowed_numbers=allowed_numbers,
                         forbidden_genes=forbidden_genes,
                     )
+                    bad = find_recommendations(nar) if ok else []
+                    if ok and bad and not policy_retry_used:
+                        policy_retry_used = True
+                        ok, reason = False, violation_message(bad)
                     if ok:
-                        rat = str(args_dict.get("rationale") or nar).strip()
+                        clean, red = strip_recommendations(nar)
+                        rat, red2 = strip_recommendations(str(args_dict.get("rationale") or nar).strip())
                         return AgentResult(
                             criteria=[],
-                            rationale=rat,
+                            rationale=rat or "",
                             status="ok",
-                            narrative=nar,
+                            narrative=clean,
                             adjusted=[],
                             n_tool_calls=calls,
+                            redacted=red or red2,
                         )
                     messages.append(Message(
                         role="tool",
@@ -804,6 +860,7 @@ def run_all(
         leading_expansion["agent_narrative"] = exp_res.narrative if exp_res.status in ("ok", "ok_truncated") else None
         leading_expansion["adjusted"] = []
         leading_expansion["adjusted_by_agent"] = []
+        leading_expansion["narrative_redacted"] = bool(exp_res.redacted)
         exp_ok = exp_res.status == "ok"
         if not exp_ok:
             fallbacks += 1
@@ -842,6 +899,7 @@ def run_all(
         cand["narrative"] = result.narrative
         cand["adjusted"] = list(result.adjusted)
         cand["criteria"] = result.criteria
+        cand["narrative_redacted"] = bool(result.redacted)
         if result.status != "ok":
             fallbacks += 1
 

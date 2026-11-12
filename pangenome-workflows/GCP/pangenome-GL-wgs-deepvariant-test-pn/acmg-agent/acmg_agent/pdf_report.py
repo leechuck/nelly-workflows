@@ -34,6 +34,7 @@ from pathlib import Path
 import re
 import sys
 from typing import Any
+from acmg_agent.policy import REDACTION_NOTE
 
 PATHOGENIC_CODES = (
     "PVS1",
@@ -393,10 +394,17 @@ def _narrative_is_complete(text: object, status: object) -> bool:
     return bool(re.search(r'[.!?]["\'”’)\]]*\s*$', text.strip()))
 
 
+
+def _redaction_html(item: dict | None) -> str:
+    """One-line note when policy removed recommendation sentences from LLM text."""
+    if isinstance(item, dict) and item.get("narrative_redacted"):
+        return f' <em>({_esc(REDACTION_NOTE)})</em>'
+    return ""
+
 def _build_structured_summary_html(data: dict, lead: dict | None, near_ties: list[dict], cands: list[dict]) -> str:
     """Render the Section 1 Summary from structured fields (or convert inline Markdown if complete agent narrative)."""
     if isinstance(lead, dict) and _narrative_is_complete(lead.get("agent_narrative"), lead.get("agent_status")):
-        return _md_inline_to_html(lead["agent_narrative"])
+        return _md_inline_to_html(lead["agent_narrative"]) + _redaction_html(lead)
     truncated_notice = ""
     if isinstance(lead, dict) and (
         lead.get("agent_status") == "ok_truncated"
@@ -840,7 +848,7 @@ def render_pdf_html(data: dict) -> str:
               <h4>{_esc(lead.get("gene"))} (Repeat Expansion <code>{_esc(lead.get("genotypes"))}</code>) — Status: <code>{exp_st}</code></h4>
               <ul>
                 <li><strong>Reviewer rationale:</strong> {_md_inline_to_html(lead.get("agent_rationale"))}</li>
-                <li><strong>Reviewer narrative:</strong> {_md_inline_to_html(lead.get("agent_narrative"))}</li>
+                <li><strong>Reviewer narrative:</strong> {_md_inline_to_html(lead.get("agent_narrative"))}{_redaction_html(lead)}</li>
               </ul>
             </div>
             """)
@@ -901,7 +909,7 @@ def render_pdf_html(data: dict) -> str:
               <ul>
                 <li><strong>Adjusted criteria:</strong> {adj_str}</li>
                 <li><strong>Reviewer rationale:</strong> {_md_inline_to_html(c.get("agent_rationale"))}</li>
-                <li><strong>Reviewer narrative:</strong> {nar_html}</li>
+                <li><strong>Reviewer narrative:</strong> {nar_html}{_redaction_html(c)}</li>
               </ul>
             </div>
             """)

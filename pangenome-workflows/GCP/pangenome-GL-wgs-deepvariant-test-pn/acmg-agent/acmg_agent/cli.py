@@ -385,6 +385,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
                 agent_status=agent_status,
                 agent_wall_seconds=agent_wall_seconds,
             )
+            item["narrative_redacted"] = bool(assistant[idx_pos].get("narrative_redacted")) if assistant is not None else False
             assessed_list.append(item)
             assessed_by_key[key] = item
 
@@ -419,6 +420,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
                     "adjusted_by_agent": list(exp.get("adjusted_by_agent") or []),
                     "agent_rationale": exp.get("agent_rationale"),
                     "agent_narrative": exp.get("agent_narrative"),
+                    "narrative_redacted": bool(exp.get("narrative_redacted")),
                 }
             else:
                 leading_dict = assessed_list[0] if assessed_list else None
@@ -463,6 +465,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
                     "adjusted_by_agent": list(exp.get("adjusted_by_agent") or []),
                     "agent_rationale": exp.get("agent_rationale"),
                     "agent_narrative": exp.get("agent_narrative"),
+                    "narrative_redacted": bool(exp.get("narrative_redacted")),
                 }
             else:
                 lead_c = lead_choice[1]
@@ -492,6 +495,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
                         "adjusted_by_agent": lead_item.get("adjusted_by_agent", []),
                         "agent_rationale": lead_item.get("agent_rationale"),
                         "agent_narrative": lead_item.get("agent_narrative"),
+                        "narrative_redacted": bool(lead_item.get("narrative_redacted")),
                     }
                 else:
                     leading_dict = None

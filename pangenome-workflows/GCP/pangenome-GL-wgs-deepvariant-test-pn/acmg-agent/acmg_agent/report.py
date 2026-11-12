@@ -5,6 +5,10 @@ import json
 from pathlib import Path
 from acmg_agent.candidates import format_expansions_table
 from acmg_agent.model import Classification, Criterion, Evidence
+from acmg_agent.policy import REDACTION_NOTE
+
+REDACTION_MD = f"_({REDACTION_NOTE})_"
+
 
 
 def _format_variant_str(chrom: str, pos: int | str, ref: str, alt: str) -> str:
@@ -251,7 +255,11 @@ def render_markdown(data: dict) -> str:
         )
         lines.append("")
     elif lead_narrative:
-        lines.append(f"**Leading Candidate LLM Narrative ({lead_gene})**: {lead_narrative}")
+        lead_red = bool(
+            (lead.get("narrative_redacted") if isinstance(lead, dict) else False)
+            or (featured_snv.get("narrative_redacted") if (lead is None and featured_snv) else False)
+        )
+        lines.append(f"**Leading Candidate LLM Narrative ({lead_gene})**: {lead_narrative}" + (f" {REDACTION_MD}" if lead_red else ""))
         lines.append("")
     elif lead_agent_status == "ok" and lead_rationale:
         lines.append(f"**Leading Candidate LLM Rationale ({lead_gene})**: {lead_rationale}")
@@ -336,7 +344,7 @@ def render_markdown(data: dict) -> str:
             lines.append(f"- **Status**: `{exp_status}`")
             lines.append("- **Adjusted criteria**: none (repeat expansion; no ACMG criteria adjustments)")
             lines.append(f"- **Rationale**: {lead.get('agent_rationale') or '—'}")
-            lines.append(f"- **Narrative**: {lead.get('agent_narrative') or '—'}")
+            lines.append(f"- **Narrative**: {lead.get('agent_narrative') or '—'}" + (f" {REDACTION_MD}" if lead.get("narrative_redacted") else ""))
             lines.append("")
         for c in cands:
             c_status = c.get("agent_status") or "not_reviewed"
@@ -367,7 +375,7 @@ def render_markdown(data: dict) -> str:
                     f"refer to complete rationale above.]_ {c.get('agent_narrative') or '—'}"
                 )
             else:
-                lines.append(f"- **Narrative**: {c.get('agent_narrative') or '—'}")
+                lines.append(f"- **Narrative**: {c.get('agent_narrative') or '—'}" + (f" {REDACTION_MD}" if c.get("narrative_redacted") else ""))
             lines.append("")
 
     if data.get("errors"):
