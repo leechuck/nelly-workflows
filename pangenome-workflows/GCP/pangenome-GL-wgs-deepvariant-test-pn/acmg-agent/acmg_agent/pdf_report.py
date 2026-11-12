@@ -537,6 +537,12 @@ def render_pdf_html(data: dict) -> str:
     llm_backend = _esc(llm.get("backend") or "none")
     llm_model = _esc(llm.get("model") or "none")
     llm_status = _esc(llm.get("status") or "disabled")
+    llm_error = _esc(llm.get("error") or "")
+    llm_error_html = (
+        f'<p class="llm-error"><strong>LLM review not run:</strong> {llm_error}. '
+        f'All results in this report are the deterministic engine result.</p>'
+        if llm_error else ""
+    )
 
     is_expansion_led = isinstance(lead, dict) and lead.get("kind") == "expansion"
 
@@ -1137,6 +1143,7 @@ def render_pdf_html(data: dict) -> str:
     .appendix-break {{
       page-break-before: always;
     }}
+    .llm-error {{ color: #8a1c1c; border-left: 3px solid #8a1c1c; padding-left: 6px; }}
     .notice-box {{
       background-color: #fffbeb;
       border: 1px solid #f59e0b;
@@ -1207,6 +1214,7 @@ def render_pdf_html(data: dict) -> str:
   <div class="notice-box">
     <strong>Explanatory Commentary Notice:</strong> This appendix contains the automated reviewer commentary (backend: <code>{llm_backend}</code>, model: <code>{llm_model}</code>, run status: <code>{llm_status}</code>). It is provided strictly as an explanation and audit trail, <strong>not as the basis of the clinical classification decision</strong>. All classifications in the main report are computed deterministically from the 28 ACMG/AMP criteria under fail-closed evidence-pack validation rules.
   </div>
+  {llm_error_html}
   <p><strong>Reviewed genes:</strong> <code>{_esc(reviewed_genes)}</code> &nbsp;|&nbsp; <strong>Unreviewed genes:</strong> <code>{_esc(unreviewed_genes)}</code></p>
   {appendix_a_body}
 
@@ -1231,7 +1239,7 @@ def render_pdf_html(data: dict) -> str:
     </tr>
     <tr>
       <th>Run Identifiers</th>
-      <td colspan="3">Patient ID: <code>{patient_id}</code> (VCF sample: <code>{sample}</code>) | Schema version: <code>{_esc(data.get("schema_version", 1))}</code> | Pipeline: <code>{pipeline_version}</code> | Image: <code>{image_tag}</code> | LLM backend/model/status: <code>{llm_backend}</code> / <code>{llm_model}</code> / <code>{llm_status}</code></td>
+      <td colspan="3">Patient ID: <code>{patient_id}</code> (VCF sample: <code>{sample}</code>) | Schema version: <code>{_esc(data.get("schema_version", 1))}</code> | Pipeline: <code>{pipeline_version}</code> | Image: <code>{image_tag}</code> | LLM backend/model/status: <code>{llm_backend}</code> / <code>{llm_model}</code> / <code>{llm_status}</code>{(" — " + llm_error) if llm_error else ""}</td>
     </tr>
   </table>
   {appendix_c_html}

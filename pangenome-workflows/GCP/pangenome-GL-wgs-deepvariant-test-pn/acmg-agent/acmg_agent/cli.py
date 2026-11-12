@@ -16,6 +16,7 @@ from acmg_agent.candidates import (
     select_candidates,
 )
 from acmg_agent.agent import run_all
+from acmg_agent.llm_backends import LLMUnavailable
 from acmg_agent.classify import classify
 from acmg_agent.criteria import evaluate_all
 from acmg_agent.evidence import build_evidence
@@ -305,6 +306,17 @@ def cmd_assess(args: argparse.Namespace) -> int:
                 backend = None
                 llm_status = "failed"
                 errors.append(f"LLM backend selection failed: {exc}")
+            if backend is not None and hasattr(backend, "preflight"):
+                try:
+                    backend.preflight()
+                except LLMUnavailable as exc:
+                    llm_info["backend"] = str(getattr(backend, "backend_name", "openai"))
+                    llm_info["model"] = getattr(backend, "model_name", None)
+                    llm_info["status"] = "failed"
+                    llm_info["error"] = str(exc)
+                    errors.append(str(exc))
+                    print(f"acmg-agent: {exc}; deterministic result only", file=sys.stderr)
+                    backend = None
             if backend is not None:
                 try:
                     backend.trace_path = str(trace_file)

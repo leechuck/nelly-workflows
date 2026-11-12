@@ -307,6 +307,18 @@ class LlamaCppBackend:
         return msg
 
 
+KEY_PLACEHOLDER = "FROM-ENV"
+
+
+def _connection_class(scheme: str):
+    """HTTP(S) connection class for the endpoint (one place, patchable in tests)."""
+    return http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
+
+
+class LLMUnavailable(RuntimeError):
+    """The LLM cannot be used for this run (key missing/rejected, endpoint unreachable)."""
+
+
 class OpenAICompatBackend:
     """OpenAI-compatible endpoint (https or localhost server), stdlib only."""
 
@@ -340,10 +352,38 @@ class OpenAICompatBackend:
         self.model_name = model
         self.trace_path: str | None = None
 
+    def preflight(self, timeout_seconds: int = 30) -> None:
+        """Fail fast with a plain reason before any review starts.
+
+        Raises LLMUnavailable when the key is missing (or still the FROM-ENV
+        placeholder), when the endpoint rejects the key, or when it cannot be
+        reached. Never includes the key in the message.
+        """
+        if not self.api_key.strip() or self.api_key.strip() == KEY_PLACEHOLDER:
+            raise LLMUnavailable(
+                "LLM API key not supplied (the FROM-ENV placeholder was not replaced at submission)"
+            )
+        base = self.url[: -len("/chat/completions")] if self.url.endswith("/chat/completions") else self.url
+        parsed = urlparse(base + "/models")
+        conn_cls = _connection_class(parsed.scheme)
+        conn = conn_cls(parsed.netloc, timeout=timeout_seconds)
+        try:
+            conn.request("GET", parsed.path, headers={"Authorization": f"Bearer {self.api_key}"})
+            status = int(getattr(conn.getresponse(), "status", 200))
+        except (OSError, http.client.HTTPException) as exc:
+            reason = str(exc).replace(self.api_key, "***")[:120] or exc.__class__.__name__
+            raise LLMUnavailable(f"LLM endpoint unreachable: {reason}") from None
+        finally:
+            conn.close()
+        if status in (401, 403):
+            raise LLMUnavailable(f"LLM endpoint rejected the API key (HTTP {status})")
+        if status >= 500:
+            raise LLMUnavailable(f"LLM endpoint unreachable: HTTP {status}")
+
     def _post_json(self, body: dict[str, Any]) -> dict[str, Any]:
         payload = json.dumps(body).encode()
         parsed = urlparse(self.url)
-        conn_cls = http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
+        conn_cls = _connection_class(parsed.scheme)
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",

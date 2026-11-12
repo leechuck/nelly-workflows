@@ -199,6 +199,8 @@ def render_markdown(data: dict) -> str:
     lines.append(
         f"- **LLM Review**: backend=`{llm_backend}`, model=`{llm_model}`, status=`{llm_status}`"
     )
+    if llm.get("error"):
+        lines.append(f"> **LLM review not run**: {llm.get('error')}. The report below is the deterministic result.")
     if llm_status in ("disabled", "off"):
         lines.append(
             f"> **NOTE — Deterministic-only report (`llm.status={llm_status}`)**: "
@@ -315,6 +317,8 @@ def render_markdown(data: dict) -> str:
         f"- **LLM configuration (model, status)**: backend=`{llm_backend}`, "
         f"model=`{llm_model}`, status=`{llm_status}`"
     )
+    if llm.get("error"):
+        lines.append(f"- **LLM error**: {llm.get('error')}")
     if "reviewed" in llm or "unreviewed" in llm:
         lines.append(f"- **Reviewed genes**: {', '.join(llm.get('reviewed') or []) or 'none'}")
         lines.append(f"- **Unreviewed genes**: {', '.join(llm.get('unreviewed') or []) or 'none'}")
