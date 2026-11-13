@@ -541,7 +541,7 @@ All runs were local (no Arvados): cwltool 3.3 with Singularity on IBEX (Slurm), 
 | Whole `main-vg.cwl`, Tay-Sachs 30x | IBEX 55409798, 24 cores / 180 GB | exit 0, 30,032 s (8 h 20 m); HEXA c.1421+1G>C hom, Pathogenic 10 pts |
 | Whole `main-vg.cwl`, Huntington 30x | IBEX 55418971, 24 cores / 180 GB | exit 0, 8 h 19 m; HTT 18/46 expansion leading (STRchive pathogenic range) |
 | `align-and-call.cwl` + tail separately | IBEX 55405589/55409647 (TS), 55405590/55409649 (HD) | exit 0; same leading findings |
-| ACMG step re-run on the same calls with the final image | IBEX (v7) and ws (v8, cwltool + Docker, fixtures) | same classification; Qwen narratives complete; see CHANGELOG R11/R12 |
+| ACMG step re-run on the same calls with the final image (`nelly-acmg-agent:v9`, KAUST endpoint) | IBEX 55554330, Singularity, 2026-11-13 | TS: 791 s, `llm.status: ok` (5/5), HEXA Pathogenic 10 pts. HD: 2,437 s, `llm.status: ok` (6/6), HTT 18/46 leading; one recommendation sentence removed from the HTT commentary and flagged in the PDF |
 | LLM failure handling | ws, cwltool + Docker, `llm_api_key: FROM-ENV` (v8); live OpenRouter with a wrong key and an unknown model (v9 code) | exit 0, `llm.status: failed`, `llm.error` shown in PDF, HEXA still Pathogenic, key not in logs |
 | ACMG step through OpenRouter (`qwen/qwen3.8-27b`, `data_collection: deny`) | laptop, v9 code, TS and HD fixtures, 2026-11-13 | exit 0 in 329 s / 449 s; `llm.status: ok` (5/5, 6/6); HEXA Pathogenic 10 pts; HTT 18/46 leading; key in no output file |
 | `acmg-agent.cwl` through OpenRouter, `nelly-acmg-agent:v9` | ws, `cwltool --enable-ext` + Docker, TS fixture, 2026-11-13 | exit 0 in 544 s; `llm.status: ok` (5/5); HEXA Pathogenic 10 pts; key shown as `(secret-…)` in the cwltool log, in no output file |
@@ -555,7 +555,7 @@ All runs were local (no Arvados): cwltool 3.3 with Singularity on IBEX (Slurm), 
 | Offline tests | pipeline dir `python3 -m pytest -q --ignore=acmg-agent`; `acmg-agent/` `uv run pytest -q` | all pass (counts in CHANGELOG R12) |
 | CWL | `cwltool --enable-ext --validate` on every file, `cwltool --pack main-vg.cwl` | clean |
 
-The composed `main-vg.cwl` runs used earlier ACMG images; the reports Robert reviewed were produced by re-running only the ACMG step on those same calls. The Yang et al. Saudi-graph HG003 SNP F1 of 0.9971 used vg 1.54 + DV 1.6 and a different evaluation harness; the legacy baseline row above is the like-for-like comparison.
+The composed `main-vg.cwl` runs used earlier ACMG images; the final reports were produced by re-running only the ACMG step (v9) on those same calls. The Yang et al. Saudi-graph HG003 SNP F1 of 0.9971 used vg 1.54 + DV 1.6 and a different evaluation harness; the legacy baseline row above is the like-for-like comparison.
 
 Not measured: hap.py memory under Docker (68 GB peak under Singularity includes the unpacked image; `happy.cwl` requests 32 GB, raise `ramMin` if it is killed); pangenome-aware DV at 30x outside IBEX.
 
