@@ -515,7 +515,7 @@ The step needs any OpenAI-compatible chat-completions endpoint with tool calling
 1. **OpenRouter (no GPU, tested).** `llm_endpoint: https://openrouter.ai/api/v1`, `llm_model: qwen/qwen3.8-27b`, key from your own OpenRouter account. It was about three times faster than the shared lab endpoint. What to know:
    - **Data leaves your cloud.** The evidence pack (variants, gene names, HPO terms, repeat genotypes) goes to OpenRouter and on to whichever provider serves the model. We tested with simulated patients only. For real patient data this needs a data-governance decision first.
    - **Limit the providers** with `llm_extra_body` (a JSON object merged into every request). `{"provider": {"data_collection": "deny"}}` uses only providers that do not store prompts; `{"provider": {"order": ["<name>"], "allow_fallbacks": false}}` pins one provider. Our test used `data_collection: deny`.
-   - **Provider can change between requests** unless pinned; each response's `model` and `provider` are in `llm-trace.jsonl`.
+   - **The provider changes between requests** unless pinned: in one test run the 20 requests of a single sample were served by 7 different providers. Each request's `model` and `provider` are logged in `llm-trace.jsonl` (`output_acmg_llm_trace`).
    - Cost is per token (about 20 requests per sample; about 59k input and 36k output tokens for the Tay-Sachs fixture, under 10 US cents at the 2026-11 list price).
 2. **Self-host the same model in the cloud.** Keeps the data in your cloud. Identical flags to the lab server (we have not run this in a cloud ourselves):
    ```bash
@@ -544,6 +544,7 @@ All runs were local (no Arvados): cwltool 3.3 with Singularity on IBEX (Slurm), 
 | ACMG step re-run on the same calls with the final image | IBEX (v7) and ws (v8, cwltool + Docker, fixtures) | same classification; Qwen narratives complete; see CHANGELOG R11/R12 |
 | LLM failure handling | ws, cwltool + Docker, `llm_api_key: FROM-ENV` (v8); live OpenRouter with a wrong key and an unknown model (v9 code) | exit 0, `llm.status: failed`, `llm.error` shown in PDF, HEXA still Pathogenic, key not in logs |
 | ACMG step through OpenRouter (`qwen/qwen3.8-27b`, `data_collection: deny`) | laptop, v9 code, TS and HD fixtures, 2026-11-13 | exit 0 in 329 s / 449 s; `llm.status: ok` (5/5, 6/6); HEXA Pathogenic 10 pts; HTT 18/46 leading; key in no output file |
+| `acmg-agent.cwl` through OpenRouter, `nelly-acmg-agent:v9` | ws, `cwltool --enable-ext` + Docker, TS fixture, 2026-11-13 | exit 0 in 544 s; `llm.status: ok` (5/5); HEXA Pathogenic 10 pts; key shown as `(secret-…)` in the cwltool log, in no output file |
 | GIAB HG003, standard DV 1.10 | IBEX, hap.py vcfeval vs v4.2.1, PASS | SNP F1 0.9956 (R 0.9946 / P 0.9966), INDEL F1 0.9941 |
 | GIAB HG002, standard DV 1.10 | same | SNP F1 0.9958 (R 0.9945 / P 0.9971), INDEL F1 0.9925 |
 | GIAB HG003, pangenome-aware DV 1.10 | same | SNP F1 0.9922 (R 0.9877 / P 0.9968), INDEL F1 0.9934 |
