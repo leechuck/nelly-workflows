@@ -144,6 +144,9 @@ inputs:
   llm_max_tokens:
     type: int
     default: 4096
+  llm_extra_body:
+    type: string
+    default: ""
   pipeline_version:
     type: string
     default: "nelly-workflows modernise-2026-11"
@@ -345,6 +348,7 @@ steps:
       llm_model: llm_model
       llm_api_key: llm_api_key
       llm_max_tokens: llm_max_tokens
+      llm_extra_body: llm_extra_body
       pipeline_version: pipeline_version
     out: [acmg_json, acmg_report, acmg_pdf]
     run: acmg-agent.cwl

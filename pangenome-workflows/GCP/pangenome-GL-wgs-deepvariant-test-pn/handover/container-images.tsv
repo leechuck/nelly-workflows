@@ -1,5 +1,5 @@
 image_tag	image_role	image_type	dockerfile_path	keepdocker_uuid	keepdocker_pdh	approx_size_mb	cloud_registry_action
-nelly-acmg-agent:v8	ACMG deterministic engine & LLM reviewer agent; candidate VCF extractor	Lab-built	acmg-agent/Dockerfile	not uploaded (build locally)	-	1800	Build locally via acmg-agent/Dockerfile and push to ECR/OCIR as nelly-acmg-agent:v2
+nelly-acmg-agent:v9	ACMG deterministic engine & LLM reviewer agent; candidate VCF extractor	Lab-built	acmg-agent/Dockerfile	not uploaded (build locally)	-	1800	Build locally via acmg-agent/Dockerfile and push to ECR/OCIR as nelly-acmg-agent:v2
 nelly-exomiser:v4	Phenotype-driven gene/variant prioritisation (Exomiser 15.1.0 + JRE 21)	Lab-built	exomiser-wrapper/Dockerfile	cborg-4zz18-fjxxofhos7m3h0w	7712a129b6c89fb29f6f39eb5842ad90+429	513	Build locally via exomiser-wrapper/Dockerfile and push to ECR/OCIR as nelly-exomiser:v4
 quay.io/vgteam/vg:v1.78.0	vg Giraffe alignment with haplotype sampling; graph path indexing	Public	N/A	cborg-4zz18-b6fx6hspms8ll2b	b85cadbf0e8e397cd54bb5fdc809b57e+555	667	Pull from quay.io and mirror/re-tag to ECR/OCIR
 google/deepvariant:1.10.0	Standard WGS small variant calling (SNP/INDEL)	Public	N/A	cborg-4zz18-hntgy76r3e4rn0p	37f180d007ba596a54ac44fdac056cb3+3244	4910	Pull from Docker Hub and mirror/re-tag to ECR/OCIR

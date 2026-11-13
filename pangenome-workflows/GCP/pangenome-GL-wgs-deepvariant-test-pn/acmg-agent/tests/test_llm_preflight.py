@@ -118,3 +118,90 @@ def test_preflight_message_never_contains_key(monkeypatch):
     with pytest.raises(LLMUnavailable) as ei:
         OpenAICompatBackend("http://llm.invalid:8000/v1", "m").preflight()
     assert SECRET not in str(ei.value)
+
+
+# --- R13: chat preflight (providers such as OpenRouter serve GET /models without a key) ---
+
+def _routed_conn(chat_status=200, chat_body=b"{}", chat_exc=None, seen=None):
+    class Conn:
+        def __init__(self, netloc, timeout=None):
+            self._method = None
+
+        def request(self, method, path, body=None, headers=None):
+            self._method = method
+            if seen is not None:
+                seen.append((method, path, json.loads(body) if body else None))
+            if method == "POST" and chat_exc is not None:
+                raise chat_exc
+
+        def getresponse(self):
+            resp = _Resp(200 if self._method == "GET" else chat_status)
+            resp.read = lambda: chat_body
+            return resp
+
+        def close(self):
+            pass
+
+    return Conn
+
+
+def _backend(monkeypatch, conn, model="qwen/qwen3.8-27b"):
+    monkeypatch.setenv("ACMG_LLM_API_KEY", SECRET)
+    monkeypatch.setattr(llm_backends, "_connection_class", lambda scheme: conn)
+    return OpenAICompatBackend("https://openrouter.invalid/api/v1", model)
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_chat_preflight_catches_key_rejected_after_public_models(monkeypatch, status):
+    with pytest.raises(LLMUnavailable, match=f"rejected the API key \\(HTTP {status}\\)"):
+        _backend(monkeypatch, _routed_conn(chat_status=status)).preflight()
+
+
+def test_chat_preflight_names_unknown_model_and_masks_key(monkeypatch):
+    body = f'{{"error": "{SECRET} is not a valid model ID"}}'.encode()
+    with pytest.raises(LLMUnavailable) as ei:
+        _backend(monkeypatch, _routed_conn(chat_status=404, chat_body=body), model="qwen3.8-27b").preflight()
+    msg = str(ei.value)
+    assert "refused model 'qwen3.8-27b' (HTTP 404)" in msg and "not a valid model ID" in msg
+    assert SECRET not in msg
+
+
+def test_chat_preflight_no_credit(monkeypatch):
+    with pytest.raises(LLMUnavailable, match="no credit"):
+        _backend(monkeypatch, _routed_conn(chat_status=402)).preflight()
+
+
+@pytest.mark.parametrize("kw", [{"chat_exc": socket.timeout("timed out")}, {"chat_status": 429},
+                                {"chat_status": 503}])
+def test_chat_preflight_tolerates_a_busy_endpoint(monkeypatch, kw):
+    _backend(monkeypatch, _routed_conn(**kw)).preflight()
+
+
+def test_extra_body_sent_but_cannot_override_model(monkeypatch):
+    seen = []
+    monkeypatch.setenv("ACMG_LLM_EXTRA_BODY",
+                       '{"provider": {"data_collection": "deny"}, "model": "other", "max_tokens": 1}')
+    backend = _backend(monkeypatch, _routed_conn(seen=seen))
+    backend.preflight()
+    post = [b for m, _, b in seen if m == "POST"][0]
+    assert post["provider"] == {"data_collection": "deny"}
+    assert post["model"] == "qwen/qwen3.8-27b" and post["max_tokens"] == 16
+
+
+@pytest.mark.parametrize("raw", ["not json", "[1, 2]"])
+def test_bad_extra_body_is_a_clear_error(monkeypatch, raw):
+    monkeypatch.setenv("ACMG_LLM_EXTRA_BODY", raw)
+    with pytest.raises(ValueError, match="ACMG_LLM_EXTRA_BODY"):
+        _backend(monkeypatch, _routed_conn())
+
+
+def test_trace_records_upstream_provider():
+    from acmg_agent.llm_backends import Message, _build_trace_entry
+    entry = _build_trace_entry(
+        backend_name="openai", model_name="qwen/qwen3.8-27b", session_affinity="s", url="u",
+        max_tokens=16, n_messages=1, n_tools=0,
+        resp={"id": "x", "model": "qwen/qwen3.8-27b", "provider": "SomeHost",
+              "choices": [{"message": {"content": "OK"}, "finish_reason": "stop"}]},
+        msg=Message(role="assistant", content="OK"), elapsed_seconds=0.1, trace_meta=None, attempt="initial",
+    )
+    assert entry["response"]["provider"] == "SomeHost"

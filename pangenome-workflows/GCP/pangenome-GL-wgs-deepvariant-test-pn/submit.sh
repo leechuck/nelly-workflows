@@ -13,7 +13,11 @@
 # LLM key: committed input JSONs carry "llm_api_key": "FROM-ENV". This script replaces
 # it with $ACMG_LLM_API_KEY (or the contents of ~/.config/borg-llm/api-key) in a
 # mode-600 temporary copy, submits that copy and deletes it. The key never appears on
-# a command line. main-vg.cwl declares llm_api_key a cwltool:Secrets input, so Arvados
+# a command line. If ACMG_LLM_ENDPOINT, ACMG_LLM_MODEL or ACMG_LLM_EXTRA_BODY are set,
+# they replace llm_endpoint / llm_model / llm_extra_body in the same copy, so the
+# committed JSONs work unchanged with another provider, for example OpenRouter:
+#   export ACMG_LLM_ENDPOINT=https://openrouter.ai/api/v1 ACMG_LLM_MODEL=qwen/qwen3.8-27b
+# main-vg.cwl declares llm_api_key a cwltool:Secrets input, so Arvados
 # keeps it in secret_mounts rather than in the visible run inputs.
 #
 # Rationale for dev/prod: each step writes its own Keep collection. During development we
@@ -54,7 +58,8 @@ print("yes" if d.get("llm_api_key") == "FROM-ENV" and backend == "openai" else
       "placeholder-unused" if d.get("llm_api_key") == "FROM-ENV" else "no")
 PY
 )
-if [ "$NEEDS_KEY" != "no" ]; then
+OVERRIDES="${ACMG_LLM_ENDPOINT:-}${ACMG_LLM_MODEL:-}${ACMG_LLM_EXTRA_BODY:-}"
+if [ "$NEEDS_KEY" != "no" ] || [ -n "$OVERRIDES" ]; then
   KEY_FILE="$HOME/.config/borg-llm/api-key"
   if [ -z "${ACMG_LLM_API_KEY:-}" ] && [ -r "$KEY_FILE" ]; then
     ACMG_LLM_API_KEY=$(tr -d '[:space:]' < "$KEY_FILE")
@@ -67,7 +72,9 @@ if [ "$NEEDS_KEY" != "no" ]; then
   umask 077
   TMP_INPUTS=$(mktemp "${TMPDIR:-$HOME/tmp}/submit-inputs.XXXXXX")
   mv "$TMP_INPUTS" "$TMP_INPUTS.json"; TMP_INPUTS="$TMP_INPUTS.json"
-  ACMG_LLM_API_KEY="${ACMG_LLM_API_KEY:-}" python3 - "$INPUTS" "$TMP_INPUTS" <<'PY'
+  ACMG_LLM_API_KEY="${ACMG_LLM_API_KEY:-}" NEEDS_KEY="$NEEDS_KEY" \
+  ACMG_LLM_ENDPOINT="${ACMG_LLM_ENDPOINT:-}" ACMG_LLM_MODEL="${ACMG_LLM_MODEL:-}" \
+  ACMG_LLM_EXTRA_BODY="${ACMG_LLM_EXTRA_BODY:-}" python3 - "$INPUTS" "$TMP_INPUTS" <<'PY'
 import json, os, sys
 src, dst = sys.argv[1], sys.argv[2]
 d = json.load(open(src))
@@ -86,7 +93,14 @@ def absolutise(v):
         for x in v:
             absolutise(x)
 absolutise(d)
-d["llm_api_key"] = os.environ["ACMG_LLM_API_KEY"]
+if os.environ["NEEDS_KEY"] != "no":
+    d["llm_api_key"] = os.environ["ACMG_LLM_API_KEY"]
+for env, key in (("ACMG_LLM_ENDPOINT", "llm_endpoint"), ("ACMG_LLM_MODEL", "llm_model"),
+                 ("ACMG_LLM_EXTRA_BODY", "llm_extra_body")):
+    if os.environ.get(env):
+        d[key] = os.environ[env]
+        if key != "llm_extra_body":
+            print(f"submit: {key} = {d[key]} (from ${env})", file=sys.stderr)
 with open(dst, "w") as fh:
     json.dump(d, fh, indent=2)
 PY

@@ -3,6 +3,14 @@
 All notable changes to the annotation/interpretation tail of this workflow
 (`main-vg.cwl`: VEP → slivar → acmg-agent) are documented here.
 
+### R13 (2026-11-13) — OpenRouter as LLM provider (`nelly-acmg-agent:v9`)
+
+- The ACMG step was run through OpenRouter (`https://openrouter.ai/api/v1`, `qwen/qwen3.8-27b`): both fixtures exit 0 with `llm.status: ok` and the same classifications as on the KAUST endpoint, in 5.5 and 7.5 minutes.
+- The LLM check before the reviews now also sends one tiny chat request. OpenRouter answers `GET /models` without a key, so a wrong key, an unknown model name (HTTP 400/404) or an empty account (HTTP 402) was otherwise only visible as one failed review per variant. A busy endpoint (timeout, 429, 5xx) does not fail the check.
+- New optional input `llm_extra_body` (env `ACMG_LLM_EXTRA_BODY`): a JSON object merged into every LLM request, for provider options such as OpenRouter's `{"provider": {"data_collection": "deny"}}`. It cannot override `model`, `messages` or `max_tokens`.
+- `submit.sh` takes `ACMG_LLM_ENDPOINT`, `ACMG_LLM_MODEL` and `ACMG_LLM_EXTRA_BODY` from the environment and applies them to the private copy of the inputs.
+- Image `nelly-acmg-agent:v9`.
+
 ### R12 (2026-11-12) — deployment safety and reviewer output policy (`nelly-acmg-agent:v8`)
 
 - The LLM reviewer may not recommend clinical actions (testing, counselling, referral, management, surveillance). The rule is in all system prompts; a post-check (`acmg_agent/policy.py`) gives the model one rewrite turn and otherwise removes the sentences, sets `narrative_redacted: true` and prints a note in the Markdown and PDF. Found on the real Huntington run ("…amenable to genetic counseling regarding predictive testing…").

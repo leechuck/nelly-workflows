@@ -95,3 +95,30 @@ def test_no_placeholder_passes_file_unchanged(tmp_path):
     r = _run(env, inp)
     assert r.returncode == 0, r.stderr
     assert (stub / "path.txt").read_text().strip() == str(inp)
+
+
+def test_endpoint_and_model_overrides_from_env(tmp_path):
+    stub, inp, env, home = _setup(tmp_path, {"llm_api_key": "FROM-ENV", "llm_backend": "openai",
+                                              "llm_endpoint": "http://lab.invalid:8000/v1",
+                                              "llm_model": "qwen3.8-27b"})
+    env.update(ACMG_LLM_API_KEY=KEY, ACMG_LLM_ENDPOINT="https://openrouter.ai/api/v1",
+               ACMG_LLM_MODEL="qwen/qwen3.8-27b",
+               ACMG_LLM_EXTRA_BODY='{"provider": {"data_collection": "deny"}}')
+    r = _run(env, inp)
+    assert r.returncode == 0, r.stderr
+    sent = json.loads((stub / "inputs.json").read_text())
+    assert sent["llm_endpoint"] == "https://openrouter.ai/api/v1"
+    assert sent["llm_model"] == "qwen/qwen3.8-27b"
+    assert json.loads(sent["llm_extra_body"]) == {"provider": {"data_collection": "deny"}}
+    assert sent["llm_api_key"] == KEY
+    assert KEY not in r.stdout + r.stderr
+    assert json.loads(inp.read_text())["llm_model"] == "qwen3.8-27b"  # original untouched
+
+
+def test_overrides_without_placeholder_keep_existing_key_field(tmp_path):
+    stub, inp, env, home = _setup(tmp_path, {"llm_backend": "off"})
+    env["ACMG_LLM_MODEL"] = "qwen/qwen3.8-27b"
+    r = _run(env, inp)
+    assert r.returncode == 0, r.stderr
+    sent = json.loads((stub / "inputs.json").read_text())
+    assert sent["llm_model"] == "qwen/qwen3.8-27b" and "llm_api_key" not in sent

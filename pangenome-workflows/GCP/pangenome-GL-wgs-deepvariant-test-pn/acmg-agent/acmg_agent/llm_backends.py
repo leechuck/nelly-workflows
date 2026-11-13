@@ -201,6 +201,8 @@ def _build_trace_entry(
         "response": {
             "id": (resp or {}).get("id") if isinstance(resp, dict) else None,
             "model": (resp or {}).get("model") if isinstance(resp, dict) else model_name,
+            # Routers such as OpenRouter name the upstream provider that served the call.
+            "provider": (resp or {}).get("provider") if isinstance(resp, dict) else None,
             "finish_reason": msg.finish_reason,
             "usage": msg.usage,
             "reasoning_chars": len(str(reasoning_text)) if reasoning_text else 0,
@@ -310,6 +312,24 @@ class LlamaCppBackend:
 KEY_PLACEHOLDER = "FROM-ENV"
 
 
+def _extra_body_from_env() -> dict[str, Any]:
+    """Optional provider-specific request fields from ACMG_LLM_EXTRA_BODY (a JSON object).
+
+    Example for OpenRouter: {"provider": {"data_collection": "deny"}}.
+    Anything that is not a JSON object is a configuration error.
+    """
+    raw = os.environ.get("ACMG_LLM_EXTRA_BODY", "").strip()
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"ACMG_LLM_EXTRA_BODY is not valid JSON: {exc}") from None
+    if not isinstance(value, dict):
+        raise ValueError("ACMG_LLM_EXTRA_BODY must be a JSON object")
+    return value
+
+
 def _connection_class(scheme: str):
     """HTTP(S) connection class for the endpoint (one place, patchable in tests)."""
     return http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
@@ -351,6 +371,7 @@ class OpenAICompatBackend:
         self.backend_name = "openai"
         self.model_name = model
         self.trace_path: str | None = None
+        self.extra_body = _extra_body_from_env()
 
     def preflight(self, timeout_seconds: int = 30) -> None:
         """Fail fast with a plain reason before any review starts.
@@ -379,6 +400,47 @@ class OpenAICompatBackend:
             raise LLMUnavailable(f"LLM endpoint rejected the API key (HTTP {status})")
         if status >= 500:
             raise LLMUnavailable(f"LLM endpoint unreachable: HTTP {status}")
+        self._preflight_chat(timeout_seconds=max(timeout_seconds, 60))
+
+    def _preflight_chat(self, timeout_seconds: int = 60) -> None:
+        """One tiny chat request: proves the key, the model name and the account.
+
+        Needed because some providers (OpenRouter) serve GET /models without
+        authentication, so a wrong key or model name would otherwise only show
+        up as one failed review per variant. A slow or busy endpoint (timeout,
+        429, 5xx) is not an error here; the review calls have their own retries.
+        """
+        body = dict(self.extra_body)
+        body.update({
+            "model": self.model,
+            "messages": [{"role": "user", "content": "Reply with OK."}],
+            "max_tokens": 16,
+        })
+        payload = json.dumps(body).encode()
+        parsed = urlparse(self.url)
+        conn = _connection_class(parsed.scheme)(parsed.netloc, timeout=timeout_seconds)
+        try:
+            conn.request("POST", parsed.path or "/", body=payload, headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Length": str(len(payload)),
+            })
+            resp = conn.getresponse()
+            status = int(getattr(resp, "status", 200))
+            detail = resp.read().decode("utf-8", errors="replace") if status >= 400 else ""
+        except (OSError, http.client.HTTPException):
+            return
+        finally:
+            conn.close()
+        detail = " ".join(detail.replace(self.api_key, "***").split())[:160]
+        if status in (401, 403):
+            raise LLMUnavailable(f"LLM endpoint rejected the API key (HTTP {status})")
+        if status == 402:
+            raise LLMUnavailable("LLM account has no credit left (HTTP 402)")
+        if status in (400, 404, 422):
+            raise LLMUnavailable(
+                f"LLM endpoint refused model '{self.model}' (HTTP {status}): {detail}"
+            )
 
     def _post_json(self, body: dict[str, Any]) -> dict[str, Any]:
         payload = json.dumps(body).encode()
@@ -434,11 +496,13 @@ class OpenAICompatBackend:
         # http.client over a scheme-validated http(s) URL only (no file:/custom schemes).
         eff_max_tokens = max_tokens if (max_tokens is not None and max_tokens > 0) else self.max_tokens
         payload_msgs = [_message_to_openai(m) for m in messages]
-        base_body: dict[str, Any] = {
+        # Provider-specific options first, so they can never override the fields below.
+        base_body: dict[str, Any] = dict(self.extra_body)
+        base_body.update({
             "model": self.model,
             "messages": payload_msgs,
             "max_tokens": eff_max_tokens,
-        }
+        })
         if tools:
             base_body["tools"] = tools
             base_body["tool_choice"] = "auto"

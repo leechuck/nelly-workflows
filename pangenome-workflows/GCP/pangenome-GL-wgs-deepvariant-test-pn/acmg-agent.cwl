@@ -8,9 +8,11 @@ class: CommandLineTool
 # a rejected/failed/timed-out LLM assessment falls back to the deterministic
 # result, so the step always produces a complete report.
 #
-# LLM backend is configured via workflow inputs mapped to environment variables
-# (openai endpoint by default, with local 3B GGUF via llama.cpp as offline
-# fallback inside the image). The API key travels only via EnvVarRequirement
+# LLM backend is configured via workflow inputs mapped to environment variables.
+# Any OpenAI-compatible endpoint with tool calling works: OpenRouter
+# (https://openrouter.ai/api/v1, model qwen/qwen3.8-27b), a self-hosted vLLM
+# server, or the KAUST lab endpoint (the default, reachable only inside KAUST).
+# A local 3B GGUF via llama.cpp is the offline fallback inside the image. The API key travels only via EnvVarRequirement
 # and never appears in argv.
 baseCommand: [python, -m, acmg_agent.cli, assess]
 $namespaces:
@@ -45,9 +47,12 @@ requirements:
       ACMG_LLM_MODEL: $(inputs.llm_model)
       ACMG_LLM_API_KEY: $(inputs.llm_api_key)
       ACMG_LLM_MAX_TOKENS: $(String(inputs.llm_max_tokens))
+      # Optional provider-specific request fields as a JSON object, for example
+      # {"provider": {"data_collection": "deny"}} on OpenRouter. Empty = none.
+      ACMG_LLM_EXTRA_BODY: $(inputs.llm_extra_body)
       ACMG_PIPELINE_VERSION: $(inputs.pipeline_version)
   DockerRequirement:
-    dockerPull: 'nelly-acmg-agent:v8'
+    dockerPull: 'nelly-acmg-agent:v9'
 arguments:
   # VEP-annotated mini-VCF from the vep-candidates step: the ACMG evidence
   # builder's primary annotation source (consequence, MANE/HGVS, AFs).
@@ -143,6 +148,9 @@ inputs:
   llm_max_tokens:
     type: int
     default: 4096
+  llm_extra_body:
+    type: string
+    default: ""
   pipeline_version:
     type: string
     default: "nelly-workflows modernise-2026-11"

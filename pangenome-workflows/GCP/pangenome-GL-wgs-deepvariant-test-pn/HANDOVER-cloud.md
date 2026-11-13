@@ -1,7 +1,7 @@
 # Cloud Deployment & Migration Handover — Modernised Nelly Workflow
 
 **Audience:** Dung Lam (Workflow Owner & Arvados Cluster Operator)  
-**Date:** 2026-11-12 (rev 4)  
+**Date:** 2026-11-13 (rev 5)  
 **Repository:** `nelly-workflows` (`pangenome-workflows/GCP/pangenome-GL-wgs-deepvariant-test-pn/`)  
 **Target Environments:** AWS / Oracle Cloud Infrastructure (OCI) / On-premise Arvados clusters  
 **Accompanying Machine-Readable Tables:** `handover/` (`data-bundles.tsv`, `container-images.tsv`, `workflow-inputs-main-vg.tsv`, `giab-sha256sums.txt`)
@@ -16,28 +16,32 @@ Everything below this section is reference. This section is the shortest correct
 2. **Images.** Public images are pulled by tag (§4.1). The two lab images are on no public registry, so build them from this repo with these exact tags:
    ```bash
    docker build -t nelly-exomiser:v4    exomiser-wrapper/
-   docker build -t nelly-acmg-agent:v8  acmg-agent/
+   docker build -t nelly-acmg-agent:v9  acmg-agent/
    ```
-   On Arvados, `arvados-cwl-runner` uploads local images into Keep on first use (or run `arv-keepdocker nelly-acmg-agent v8`). On a single VM with cwltool, the local tags are enough.
-3. **LLM endpoint and key** (§6.1). Either our KAUST endpoint over the tailnet/VPN with a personal key from Robert, or the same model on a cloud GPU (one command in §6.1), or `llm_backend: off`. Check it before a run:
+   On Arvados, `arvados-cwl-runner` uploads local images into Keep on first use (or run `arv-keepdocker nelly-acmg-agent v9`). On a single VM with cwltool, the local tags are enough.
+3. **LLM endpoint and key** (§6.1). The KAUST lab endpoint we validated on is reachable only inside KAUST, so use one of: **OpenRouter** (tested; `https://openrouter.ai/api/v1`, model `qwen/qwen3.8-27b`, your own OpenRouter key), the same model self-hosted on a cloud GPU (one command in §6.1), or `llm_backend: off`. Check it before a run:
    ```bash
-   curl -s -H "Authorization: Bearer $ACMG_LLM_API_KEY" <endpoint>/models   # lists qwen3.8-27b
+   curl -s -H "Authorization: Bearer $ACMG_LLM_API_KEY" -H "Content-Type: application/json" \
+     -d '{"model":"qwen/qwen3.8-27b","messages":[{"role":"user","content":"Reply OK"}],"max_tokens":512}' \
+     https://openrouter.ai/api/v1/chat/completions      # HTTP 200 with a "choices" list
    ```
-4. **Inputs.** Start from `main-vg.TS.e2e.json` / `main-vg.HD.e2e.json`. Replace the `keep:` PDHs with your copies (same file names) and, if not using the KAUST endpoint, set `llm_endpoint`. Leave `"llm_api_key": "FROM-ENV"`.
+4. **Inputs.** Start from `main-vg.TS.e2e.json` / `main-vg.HD.e2e.json`. Replace the `keep:` PDHs with your copies (same file names). Leave `"llm_api_key": "FROM-ENV"`. The JSONs still name the KAUST endpoint; with `submit.sh` you override it from the environment (step 5), with plain cwltool edit `llm_endpoint` and `llm_model` in your private copy.
 5. **Run.**
    - Arvados:
      ```bash
      export ARVADOS_API_HOST=<your cluster> ARVADOS_API_TOKEN=<your token>
-     export ACMG_LLM_API_KEY=<your key>       # or put it in ~/.config/borg-llm/api-key
+     export ACMG_LLM_API_KEY=<your OpenRouter key>
+     export ACMG_LLM_ENDPOINT=https://openrouter.ai/api/v1 ACMG_LLM_MODEL=qwen/qwen3.8-27b
+     export ACMG_LLM_EXTRA_BODY='{"provider": {"data_collection": "deny"}}'   # optional, see §6.1
      ./submit.sh prod main-vg.cwl main-vg.TS.e2e.json "TS first cloud run"
      ```
-     `submit.sh` replaces `FROM-ENV` with the key in a private temporary copy (deleted after submission) and refuses to submit without a key unless `llm_backend` is `off`. `llm_api_key` is declared a CWL secret, so Arvados keeps it out of the visible run inputs.
+     `submit.sh` replaces `FROM-ENV` with the key in a private temporary copy (deleted after submission) and refuses to submit without a key unless `llm_backend` is `off`. `llm_api_key` is declared a CWL secret, so Arvados keeps it out of the visible run inputs. If `ACMG_LLM_ENDPOINT`, `ACMG_LLM_MODEL` or `ACMG_LLM_EXTRA_BODY` are set, they replace `llm_endpoint`, `llm_model` and `llm_extra_body` in the same copy.
    - Single VM (cwltool + Docker): make a mode-600 copy of the inputs with the real key, then
      ```bash
      cwltool --outdir out/ main-vg.cwl inputs.private.json && rm inputs.private.json
      ```
      (`local/run.sh` automates this but was written for IBEX/cbontsr01; set `NELLY_LOCAL_ROOT`.)
-6. **Check the result.** Exit 0 and `acmg-report.pdf` present. In `acmg-assessment.json`, `llm.status` should be `ok` or `partial` and PDF Appendix A should have text. If `llm.status` is `failed`, `llm.error` says why (key not supplied, key rejected, endpoint unreachable); the classification is still complete. Expected: Tay-Sachs → HEXA c.1421+1G>C homozygous, Pathogenic, 10 points (PVS1, PM2_Supporting, PM3_Supporting); Huntington → HTT 18/46 CAG expansion in the STRchive pathogenic range. About 8 h 20 m on 24 cores / 180 GB.
+6. **Check the result.** Exit 0 and `acmg-report.pdf` present. In `acmg-assessment.json`, `llm.status` should be `ok` or `partial` and PDF Appendix A should have text. If `llm.status` is `failed`, `llm.error` says why (key not supplied, key rejected, model name refused, no credit, endpoint unreachable); the classification is still complete. Expected: Tay-Sachs → HEXA c.1421+1G>C homozygous, Pathogenic, 10 points (PVS1, PM2_Supporting, PM3_Supporting); Huntington → HTT 18/46 CAG expansion in the STRchive pathogenic range. About 8 h 20 m on 24 cores / 180 GB.
 
 ---
 
@@ -73,7 +77,7 @@ NEW STACK (November 2026 Modernisation):
 | **VEP Annotation** | `ensembl-vep:release_102.0` | `ensembl-vep:release_116.3` | Pinned `--cache_version 116`; added `--mane --protein --pick_allele_gene --af_gnomade --af_gnomadg --max_af`. Dropped `--af_gnomad` (superseded by `--af_gnomade`; VEP 116 fails if both are passed). Cache staged to `vep-116-GRCh38-cache` (`8afec8cdb796367144fa2bcec3a3dc59+624229`, 26 GB). |
 | **Two-Pass VEP** | Single pass on slivar output | Two passes: Pass 1 (slivar) + Pass 2 (`vep-candidates`) | Pass 1 annotates slivar-filtered variants for Exomiser. `acmg-extract-candidates` extracts Exomiser top candidates and repeat expansions into a mini-VCF (`candidates.vcf.gz`, ~20–50 records), and Pass 2 annotates it with full VEP 116 CSQ fields to guarantee transcript and frequency annotations for every candidate. |
 | **Exomiser** | `nelly-exomiser:v3` (15.0.0) | `nelly-exomiser:v4` (15.1.0) | Distribution downloaded at image build time from GitHub release (no pre-unpacked build context needed). Base image updated to `eclipse-temurin:21-jre`. Output remains `results/exomiser.jsonl`. Exomiser data bundle remains release **2512**. |
-| **Candidate Interpretation** | `genome-linter-llm.cwl` (`blurb.py` + local/remote LLM) | `acmg-agent.cwl` (`nelly-acmg-agent:v8`) | Deterministic 28-criteria ACMG/AMP 2015 + ClinGen SVI engine coupled with STRchive repeat expansion tiers. Includes a bounded LLM reviewer (OpenAI-compatible vLLM endpoint or local CPU GGUF fallback). Fail-closed contract enforced in code. |
+| **Candidate Interpretation** | `genome-linter-llm.cwl` (`blurb.py` + local/remote LLM) | `acmg-agent.cwl` (`nelly-acmg-agent:v9`) | Deterministic 28-criteria ACMG/AMP 2015 + ClinGen SVI engine coupled with STRchive repeat expansion tiers. Includes a bounded LLM reviewer (OpenAI-compatible vLLM endpoint or local CPU GGUF fallback). Fail-closed contract enforced in code. |
 | **Sub-Workflow Architecture** | Monolithic `main-vg.cwl` | `align-and-call.cwl` + `main-vg.cwl` + `benchmark-giab.cwl` | Core alignment and calling logic factored out into `align-and-call.cwl`, shared identically between production patient runs and GIAB benchmark runs. |
 | **CWL Standard** | `cwlVersion: v1.1` | `cwlVersion: v1.2` | Bumped across all active CWL tools and workflows to support conditional execution (`when:`) for `dv_mode`. |
 
@@ -166,6 +170,7 @@ Entry Points Overview:
 | `llm_model` | `string` | `"qwen3.8-27b"` | N/A | Model identifier for completions |
 | `llm_api_key` | `string` | `""` | Inject at runtime (`"FROM-ENV"`) | Bearer token for LLM API |
 | `llm_max_tokens` | `int` | `4096` | Default | Token budget per completion turn |
+| `llm_extra_body` | `string` | `""` | Optional | JSON object merged into every LLM request (provider options, e.g. OpenRouter `{"provider": {"data_collection": "deny"}}`) |
 
 - **Workflow Outputs:**
   - `output_aligned_cram`: Final indexed CRAM file (`.cram` + `.crai`).
@@ -285,7 +290,7 @@ a4f8fefa826f8d2c9457eacf6f4b2f6bfa29daef429d570ce04254c5e7b1121e  HG003_GRCh38_1
 
 ## 4. Container Images
 
-The public images and `nelly-exomiser:v4` are registered in cborg Keep (`arv-keepdocker`); `nelly-acmg-agent:v8` is built from the repo. Mirroring to ECR/OCIR is only needed for runners that pull from a registry (e.g. HealthOmics or a multi-node Kubernetes setup); if you re-tag, update the `dockerPull` lines to match. `coolmaksat/kmc` and `coolmaksat/minimap2-samtools` carry no version tag: after the first pull, record the digest (`docker inspect --format '{{index .RepoDigests 0}}'`) and pin it.
+The public images and `nelly-exomiser:v4` are registered in cborg Keep (`arv-keepdocker`); `nelly-acmg-agent:v9` is built from the repo. Mirroring to ECR/OCIR is only needed for runners that pull from a registry (e.g. HealthOmics or a multi-node Kubernetes setup); if you re-tag, update the `dockerPull` lines to match. `coolmaksat/kmc` and `coolmaksat/minimap2-samtools` carry no version tag: after the first pull, record the digest (`docker inspect --format '{{index .RepoDigests 0}}'`) and pin it.
 
 ### 4.1 Master Container Image Table
 
@@ -302,7 +307,7 @@ The public images and `nelly-exomiser:v4` are registered in cborg Keep (`arv-kee
 | `brentp/slivar:v0.3.0` | `slivar` | Public (Docker Hub) | N/A | `cborg-4zz18-yralzaojmwfvskm` | `3bb6ba071c0663b7c2147c629c34826e+934` | 1.26 GB | Re-tag & push to ECR/OCIR |
 | `ensemblorg/ensembl-vep:release_116.3` | `vep`, `vep-candidates` | Public (Docker Hub) | N/A | `cborg-4zz18-ss114g8sfa98kjr` | `e491cb49fdb30932e8adb51e3404c2c2+722` | 923 MB | Re-tag & push to ECR/OCIR |
 | `nelly-exomiser:v4` | `exomiser` | Lab-built | `exomiser-wrapper/Dockerfile` | `cborg-4zz18-fjxxofhos7m3h0w` | `7712a129b6c89fb29f6f39eb5842ad90+429` | 513 MB | Build locally & push to ECR/OCIR |
-| `nelly-acmg-agent:v8` | `acmg-extract-candidates`, `acmg-agent` | Lab-built | `acmg-agent/Dockerfile` | not uploaded (build locally; arvados-cwl-runner uploads it on first use) | — | ~2.1 GB | Build from the repo (§4.2) |
+| `nelly-acmg-agent:v9` | `acmg-extract-candidates`, `acmg-agent` | Lab-built | `acmg-agent/Dockerfile` | not uploaded (build locally; arvados-cwl-runner uploads it on first use) | — | ~2.1 GB | Build from the repo (§4.2) |
 | `jmcdani20/hap.py:v0.3.12` | `happy` (GIAB benchmark) | Public (Docker Hub) | N/A | `cborg-4zz18-p91vg2azx1aeu8f` | `0ffa70e9fbc7cd1f05a3a58790828d54+1102` | 1.56 GB | Re-tag & push to ECR/OCIR (benchmark only) |
 | `quay.io/biocontainers/vg:1.54.0--h9ee0642_0`| `legacy/vg-giraffe-bam` | Public (Quay) | N/A | `cborg-4zz18-rq5fanhkpxfwei4` | `effbc63fa34c2b3f82f960d22063ea70+134` | 140 MB | Legacy baseline only |
 | `google/deepvariant:1.6.0` | `legacy/deepvariant` | Public (Docker Hub) | N/A | `cborg-4zz18-zao654gh59tjwkh` | `5e98b419e3fd99e15e6d555da2ddc6f0+3748` | 3.80 GB | Legacy baseline only |
@@ -323,18 +328,18 @@ docker run --rm nelly-exomiser:v4 java -jar /exomiser/exomiser-cli-15.1.0.jar --
 # Expected output: 15.1.0
 ```
 
-#### 2. `nelly-acmg-agent:v8`
+#### 2. `nelly-acmg-agent:v9`
 Builds `acmg_agent` Python package, compiles `llama-cpp-python 0.3.2` with `CMAKE_ARGS=-DGGML_NATIVE=OFF` (Debian compatibility, Gotcha #18), and bakes in `Qwen2.5-3B-Instruct-Q4_K_M.gguf` at `/model/model.gguf` as the offline fallback.
 ```bash
 cd pangenome-workflows/GCP/pangenome-GL-wgs-deepvariant-test-pn
 
-docker build -t nelly-acmg-agent:v8 acmg-agent/
+docker build -t nelly-acmg-agent:v9 acmg-agent/
 
 # Verify:
-docker run --rm nelly-acmg-agent:v8 python -m acmg_agent.cli --help
+docker run --rm nelly-acmg-agent:v9 python -m acmg_agent.cli --help
 # Expected output: lists 'extract', 'assess' and 'render' subcommands
-docker run --rm nelly-acmg-agent:v8 env | grep ACMG_IMAGE_TAG
-# Expected output: ACMG_IMAGE_TAG=nelly-acmg-agent:v8
+docker run --rm nelly-acmg-agent:v9 env | grep ACMG_IMAGE_TAG
+# Expected output: ACMG_IMAGE_TAG=nelly-acmg-agent:v9
 ```
 
 ### 4.3 Cloud Registry Mirroring (AWS ECR / OCI OCIR)
@@ -347,7 +352,7 @@ REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/nelly"
 aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${REGISTRY}
 
 for img in \
-  "nelly-acmg-agent:v8" \
+  "nelly-acmg-agent:v9" \
   "nelly-exomiser:v4" \
   "quay.io/vgteam/vg:v1.78.0" \
   "google/deepvariant:1.10.0" \
@@ -407,9 +412,9 @@ Every observed measurement in the table below originates from a named, verified 
 | `slivar` | `slivar.cwl` | `brentp/slivar:v0.3.0` | 1 | 8,192 | — | **168.4 s (~2.8 min)** (IBEX `55409647`); **183.7 s** TS / **181.2 s** HD (`cbontsr01` Phase 1b); historical cborg was **0:04–0:05** | **2,564.4 MiB (~2.56 GB)** (IBEX `55409647`); **2,534.4–2,534.5 MiB** (`cbontsr01` Phase 1b, cgroup peak 4.2–5.0 GiB) | Evaluates gnomAD popmax frequency; filters to ~1,000 candidate variants. |
 | `vep` (Pass 1) | `vep.cwl` | `ensemblorg/ensembl-vep:release_116.3` | 2 | 8,192 | — | **476.3 s (~7.9 min)** on 14 threads (IBEX `55409647`); **661.3 s** TS / **660.2 s** HD on 2 threads (`cbontsr01` Phase 1b); historical cborg VEP 102 was **0:17–0:19** | **888.9 MiB (~889 MB)** (IBEX `55409647`); **858.9–863.4 MiB** (`cbontsr01` Phase 1b, cgroup peak 5.6–12.1 GiB incl page cache) | Annotates slivar candidate variants (~1,000 records) with VEP 116.3 cache. |
 | `exomiser` | `exomiser.cwl` | `nelly-exomiser:v4` | 4 | 32,768 | — | **59.4 s (~1.0 min)** (IBEX `55409647`); **85.4 s** TS / **80.5 s** HD (`cbontsr01` Phase 1b); historical cborg Exomiser 15.0 was **0:24–0:25** | **3,183.9 MiB (~3.18 GB)** (IBEX `55409647`); **3,574.1–3,622.6 MiB** (`cbontsr01` Phase 1b, cgroup peak 4.2–4.6 GiB) | Exomiser 15.1.0 + data 2512. Prioritises variants via phenotype similarity and rarity. |
-| `acmg-extract-candidates` | `acmg-extract-candidates.cwl` | `nelly-acmg-agent:v8` (measured with v3) | 1 | 2,048 | — | **28.1 s** (IBEX `55409647`); **< 1.0 s** (`cbontsr01` Phase 1b) | **477.2 MiB** (IBEX `55409647`, Singularity runtime); **17.5–23.8 MiB** (`cbontsr01` Phase 1b) | Generates mini-VCF (~20–50 variants) for Pass 2 VEP from Exomiser JSONL and STRchive repeat calls. |
+| `acmg-extract-candidates` | `acmg-extract-candidates.cwl` | `nelly-acmg-agent:v9` (measured with v3) | 1 | 2,048 | — | **28.1 s** (IBEX `55409647`); **< 1.0 s** (`cbontsr01` Phase 1b) | **477.2 MiB** (IBEX `55409647`, Singularity runtime); **17.5–23.8 MiB** (`cbontsr01` Phase 1b) | Generates mini-VCF (~20–50 variants) for Pass 2 VEP from Exomiser JSONL and STRchive repeat calls. |
 | `vep-candidates` (Pass 2) | `vep.cwl` | `ensemblorg/ensembl-vep:release_116.3` | 2 | 8,192 | — | **47.5 s** (IBEX `55409647`); **1.2–1.3 s** (`cbontsr01` Phase 1b) | **575.8 MiB** (IBEX `55409647`); **209.6–215.5 MiB** (`cbontsr01` Phase 1b) | Second VEP pass over candidate mini-VCF. Annotates full CSQ transcript and frequency fields. |
-| `acmg-agent` | `acmg-agent.cwl` | `nelly-acmg-agent:v8` (measured with v3) | 8 | 20,480 | — | **1,270.2 s (~21.2 min)** (IBEX `55409647`, Phase 2 TS); **1,394.8 s (~23.2 min)** (IBEX `55410119`, Phase 1b TS); **2,575.6 s (~42.9 min)** (IBEX `55411283`, Phase 1b HD); **2,199.6 s (~36.7 min)** TS / **2,098.0 s (~35.0 min)** HD (`cbontsr01` Phase 1b, `:v3`); (fallback `--net=none` run: 15.8 s) | **480.3 MiB** (IBEX `55409647`); **469.0–475.1 MiB** (IBEX `55410119`/`55411283`); **71.1–71.3 MiB** (`cbontsr01` Phase 1b) | Full 28-criteria ClinGen SVI evaluation + live Qwen3.8-27B review. TS classified `HEXA` as Pathogenic (10 pts, PVS1+PM2+PM3); HD classified `HTT` repeat expansion as Pathogenic. 0 out-of-pack HGNC genes. |
+| `acmg-agent` | `acmg-agent.cwl` | `nelly-acmg-agent:v9` (measured with v3) | 8 | 20,480 | — | **1,270.2 s (~21.2 min)** (IBEX `55409647`, Phase 2 TS); **1,394.8 s (~23.2 min)** (IBEX `55410119`, Phase 1b TS); **2,575.6 s (~42.9 min)** (IBEX `55411283`, Phase 1b HD); **2,199.6 s (~36.7 min)** TS / **2,098.0 s (~35.0 min)** HD (`cbontsr01` Phase 1b, `:v3`); (fallback `--net=none` run: 15.8 s) | **480.3 MiB** (IBEX `55409647`); **469.0–475.1 MiB** (IBEX `55410119`/`55411283`); **71.1–71.3 MiB** (`cbontsr01` Phase 1b) | Full 28-criteria ClinGen SVI evaluation + live Qwen3.8-27B review. TS classified `HEXA` as Pathogenic (10 pts, PVS1+PM2+PM3); HD classified `HTT` repeat expansion as Pathogenic. 0 out-of-pack HGNC genes. |
 | `happy` (GIAB benchmark) | `benchmark/happy.cwl` | `jmcdani20/hap.py:v0.3.12` | 8 | 32,768 | — | **~1,020–1,030 s (~17 min)** whole genome (IBEX GIAB HG002/HG003 standard) | **68,180 MiB** under Singularity, includes the unpacked image; true need under Docker unmeasured — raise `ramMin` if killed | Full-genome GIAB benchmark. Small 500 kb slice smoke-tested on `ws` (WP2). |
 | `align-and-call.cwl` (Sub-workflow) | `align-and-call.cwl` | Multi-container | 10 | 92,160 | 300,000 | **27,637 s (~7h 40m 37s)** on TS (IBEX Slurm `55405589`, 24 cores); HD: **10 h 48 m** Slurm elapsed (IBEX `55405590`, 16 cores), exit 0 | **76,707.4 MiB (~76.7 GB)** on TS (IBEX `55405589`, during Giraffe index build); **76,474.8 MiB (~76.5 GB)** on HD (IBEX `55405590`) | Sub-workflow executing KMC $\rightarrow$ Giraffe 1.78 $\rightarrow$ samtools sort/markdup $\rightarrow$ DV 1.10 + ExpansionHunter. Completed with exit 0; verified positive control `chr15:72346234 C>G PASS`. |
 | `tail-phase2-TS` (Annotation & ACMG Tail) | `local/test-tail.cwl` | Multi-container | 8 | 32,768 | — | **1,440 s (~24.0 min)** on TS (IBEX Slurm `55409647`, 16 cores); HD: **39 min** Slurm elapsed (IBEX `55409649`), exit 0, HTT 18/46 leading | **3,183.9 MiB (~3.18 GB)** (IBEX `55409647`, during Exomiser) | Full downstream sub-workflow (`local/test-tail.cwl`): bcftools concat/norm $\rightarrow$ exclude-eh $\rightarrow$ slivar $\rightarrow$ VEP Pass 1 $\rightarrow$ Exomiser $\rightarrow$ candidate extraction $\rightarrow$ VEP Pass 2 $\rightarrow$ ACMG agent. Completed with exit 0; verified 100% concordance with Phase 1b: `HEXA` Pathogenic (10 pts), 0 out-of-pack genes. |
@@ -497,16 +502,21 @@ The ACMG agent (`acmg-agent.cwl`) reviews candidate variants through a bounded t
 | Backend Option | Setup / Infrastructure | Wall Time (5 Variants) | Success Rate | Assessment Quality & Output Status |
 |---|---|---:|---:|---|
 | **vLLM Endpoint (`qwen3.8-27b`)** | `unimatrix01.kaust.edu.sa` or cloud GPU VM | **1,270 s (21.2 min)** (IBEX `55409647`), **1,395 s (23.2 min)** (IBEX `55410119`), **2,100–2,200 s** (`cbontsr01` :v3) | **100% (5/5 ok)** | `llm.status: "ok" / "partial"`. ClinGen SVI classifications; confirmed HEXA Pathogenic (10 pts) and HTT Pathogenic repeat expansion (18/46). 0 out-of-pack HGNC genes. |
-| **Local CPU GGUF (`Qwen2.5-3B`)** | Baked into `nelly-acmg-agent:v8` (`/model/model.gguf`) | 3,480 s (58.0 min) | 20% (1/5 ok, rest timeout) | `llm.status: "partial"`. Prompt processing on 8 CPU cores takes ~130s/turn; hits 50 min budget ceiling. |
+| **OpenRouter (`qwen/qwen3.8-27b`)** | `https://openrouter.ai/api/v1`, own key, no GPU | **329 s (5.5 min)** TS fixture, **449 s (7.5 min)** HD fixture (2026-11-13, image v9 code, both at once) | **100% (5/5 and 6/6 ok)** | `llm.status: "ok"`. Same classifications as the lab endpoint (HEXA Pathogenic 10 pts; HTT 18/46 pathogenic). 19–21 requests per sample. |
+| **Local CPU GGUF (`Qwen2.5-3B`)** | Baked into `nelly-acmg-agent:v9` (`/model/model.gguf`) | 3,480 s (58.0 min) | 20% (1/5 ok, rest timeout) | `llm.status: "partial"`. Prompt processing on 8 CPU cores takes ~130s/turn; hits 50 min budget ceiling. |
 | **Local CPU GGUF (`Qwen2.5-7B`)** | Built during WP4 prototyping | 2,037 s (timed out) | 0% (timeouts/rejections) | `llm.status: "partial"`. Exceeds 6-min per-variant budget on CPU. |
 | **Deterministic Engine Only (`"off"`)** | Set `llm_backend: "off"` | **< 2 s** | **100% deterministic** | `llm.status: "disabled"`. 100% reproducible ClinGen SVI rule-based classification; no narrative LLM summary. |
 
 #### Deployment options for the LLM endpoint
 
-The step needs any OpenAI-compatible chat-completions endpoint with tool calling. It is configured by workflow inputs only: `llm_backend: openai`, `llm_endpoint`, `llm_model`, `llm_api_key` (inject at submit time; templates contain `"FROM-ENV"`), `llm_max_tokens`. `acmg-agent.cwl` declares `NetworkAccess: true`; the runner must allow outbound traffic from that container. All measurements above were made with **Qwen3.8-27B-FP8 (`qwen3.8-27b`) on vLLM 0.28.0**; no other model has been validated with the reviewer contract.
+The step needs any OpenAI-compatible chat-completions endpoint with tool calling. It is configured by workflow inputs only: `llm_backend: openai`, `llm_endpoint`, `llm_model`, `llm_api_key` (inject at submit time; templates contain `"FROM-ENV"`), `llm_max_tokens`, and optionally `llm_extra_body`. `acmg-agent.cwl` declares `NetworkAccess: true`; the runner must allow outbound traffic from that container. Before any review the step sends one tiny chat request, so a wrong key, a wrong model name or an empty account shows up at once as `llm.status: failed` with the reason. The full pipeline runs were made with **Qwen3.8-27B-FP8 on vLLM 0.28.0** at KAUST; the same model through OpenRouter was checked on the ACMG step. No other model has been validated with the reviewer contract.
 
-1. **Use the lab endpoint at KAUST (no GPU needed in the cloud).** `http://unimatrix01.kaust.edu.sa:8000/v1`, model `qwen3.8-27b`. It is reachable on the KAUST network/VPN and on the lab tailnet (`http://unimatrix01.tail3b591c.ts.net:8000/v1`), so a cloud VM either joins the tailnet (Tailscale client on the runner node) or a VPN to KAUST. Dung needs his own key: Robert issues it on unimatrix01 with `sudo llm-key add <name>` (keys are per user, never shared). Capacity is two vLLM nodes shared by the lab; run ACMG steps one sample at a time, otherwise reviews hit the 6-min per-variant budget and fall back (`llm.status: partial`). Patient-derived evidence (variants, HPO labels) then leaves the cloud for KAUST — check this is acceptable for the data agreement.
-2. **Self-host the same model in the cloud.** Identical flags to the lab server:
+1. **OpenRouter (no GPU, tested).** `llm_endpoint: https://openrouter.ai/api/v1`, `llm_model: qwen/qwen3.8-27b`, key from your own OpenRouter account. It was about three times faster than the shared lab endpoint. What to know:
+   - **Data leaves your cloud.** The evidence pack (variants, gene names, HPO terms, repeat genotypes) goes to OpenRouter and on to whichever provider serves the model. We tested with simulated patients only. For real patient data this needs a data-governance decision first.
+   - **Limit the providers** with `llm_extra_body` (a JSON object merged into every request). `{"provider": {"data_collection": "deny"}}` uses only providers that do not store prompts; `{"provider": {"order": ["<name>"], "allow_fallbacks": false}}` pins one provider. Our test used `data_collection: deny`.
+   - **Provider can change between requests** unless pinned; each response's `model` and `provider` are in `llm-trace.jsonl`.
+   - Cost is per token (about 20 requests per sample; about 59k input and 36k output tokens for the Tay-Sachs fixture, under 10 US cents at the 2026-11 list price).
+2. **Self-host the same model in the cloud.** Keeps the data in your cloud. Identical flags to the lab server (we have not run this in a cloud ourselves):
    ```bash
    docker run -d --gpus all --ipc=host -p 8000:8000 vllm/vllm-openai:v0.28.0 \
      --model Qwen/Qwen3.8-27B-FP8 --served-model-name qwen3.8-27b \
@@ -514,8 +524,8 @@ The step needs any OpenAI-compatible chat-completions endpoint with tool calling
      --kv-cache-dtype fp8 --max-model-len 65536 --api-key "$VLLM_API_KEY"
    ```
    Needs ≥ 48 GB GPU memory in total (27 GB FP8 weights + KV cache): one L40S 48 GB or A100/H100 80 GB, or two 24 GB GPUs with `--tensor-parallel-size 2` (the lab runs it on 2× RTX 4090). Instance families to look at (verify current names/prices): AWS `g6e` (L40S) or `p4d/p5`; OCI `VM.GPU.A10.2` (2× A10, TP=2) or L40S/A100 shapes. The GPU is only needed during the ACMG step (21–43 min per sample), so start it on demand or keep it in a small autoscaling group. Point `llm_endpoint` at it and keep `llm_model: qwen3.8-27b`.
-3. **Commercial hosted API.** Technically works (any OpenAI-compatible provider serving a tool-calling model), but sends patient-derived data to a third party and the model is unvalidated. Not recommended without a data-governance decision.
-4. **No LLM (`llm_backend: off`).** The ACMG classification and the PDF are identical; only Appendix A (reviewer commentary) is empty. The baked CPU GGUF (`llm_backend: llama`) is too slow to be useful (3B and 7B time out on CPU, see table).
+3. **No LLM (`llm_backend: off`).** The ACMG classification and the PDF are identical; only Appendix A (reviewer commentary) is empty. The baked CPU GGUF (`llm_backend: llama`) is too slow to be useful (3B and 7B time out on CPU, see table).
+4. **KAUST lab endpoint (not available outside KAUST).** `http://unimatrix01.kaust.edu.sa:8000/v1`, model `qwen3.8-27b`, is the default in the CWL and the example JSONs because our validation ran there. It is reachable only on the KAUST network, so an external deployment must override it (options 1–3).
 
 ---
 
@@ -531,7 +541,8 @@ All runs were local (no Arvados): cwltool 3.3 with Singularity on IBEX (Slurm), 
 | Whole `main-vg.cwl`, Huntington 30x | IBEX 55418971, 24 cores / 180 GB | exit 0, 8 h 19 m; HTT 18/46 expansion leading (STRchive pathogenic range) |
 | `align-and-call.cwl` + tail separately | IBEX 55405589/55409647 (TS), 55405590/55409649 (HD) | exit 0; same leading findings |
 | ACMG step re-run on the same calls with the final image | IBEX (v7) and ws (v8, cwltool + Docker, fixtures) | same classification; Qwen narratives complete; see CHANGELOG R11/R12 |
-| LLM failure handling (v8) | ws, cwltool + Docker, `llm_api_key: FROM-ENV` | exit 0, `llm.status: failed`, `llm.error` shown in PDF, HEXA still Pathogenic, key not in logs |
+| LLM failure handling | ws, cwltool + Docker, `llm_api_key: FROM-ENV` (v8); live OpenRouter with a wrong key and an unknown model (v9 code) | exit 0, `llm.status: failed`, `llm.error` shown in PDF, HEXA still Pathogenic, key not in logs |
+| ACMG step through OpenRouter (`qwen/qwen3.8-27b`, `data_collection: deny`) | laptop, v9 code, TS and HD fixtures, 2026-11-13 | exit 0 in 329 s / 449 s; `llm.status: ok` (5/5, 6/6); HEXA Pathogenic 10 pts; HTT 18/46 leading; key in no output file |
 | GIAB HG003, standard DV 1.10 | IBEX, hap.py vcfeval vs v4.2.1, PASS | SNP F1 0.9956 (R 0.9946 / P 0.9966), INDEL F1 0.9941 |
 | GIAB HG002, standard DV 1.10 | same | SNP F1 0.9958 (R 0.9945 / P 0.9971), INDEL F1 0.9925 |
 | GIAB HG003, pangenome-aware DV 1.10 | same | SNP F1 0.9922 (R 0.9877 / P 0.9968), INDEL F1 0.9934 |
@@ -551,7 +562,7 @@ Not measured: hap.py memory under Docker (68 GB peak under Singularity includes 
 1. **Bash Expression Interpolation in CWL:** Both `$(...)` and `${...}` are evaluated by CWL parsers. In tool shell scripts, reference bash variables as `$VAR` (no braces), use backticks for subshells, and use `$(inputs.param)` only for genuine CWL inputs.
 2. **No Backslash Line Continuations:** Single backslashes in multiline command strings are stripped by CWL string evaluators. Use trailing pipes (`|`) or single long lines.
 3. **Double-Quoting Env Vars:** Never wrap an input string in quotes within `arguments` if it already contains quotes. Use `EnvVarRequirement` (`ACMG_LLM_API_KEY`) to safely pass tokens without shell parsing.
-4. **No Container `ENTRYPOINT`:** Wrapper images (`nelly-exomiser:v4`, `nelly-acmg-agent:v8`) MUST have `ENTRYPOINT: null` and `CMD: ["bash"]` or `CMD: ["python"]`. Arvados prepends `ENTRYPOINT` to `baseCommand`, duplicating arguments.
+4. **No Container `ENTRYPOINT`:** Wrapper images (`nelly-exomiser:v4`, `nelly-acmg-agent:v9`) MUST have `ENTRYPOINT: null` and `CMD: ["bash"]` or `CMD: ["python"]`. Arvados prepends `ENTRYPOINT` to `baseCommand`, duplicating arguments.
 5. **Optional File Inputs:** When passing optional files (e.g. `strchive_json`), never access `$(inputs.strchive_json.path)` directly. Use `valueFrom: "$(inputs.strchive_json ? inputs.strchive_json.path : null)"` to avoid null pointer exceptions.
 6. **Exomiser Output Glob:** Exomiser 15.1.0 writes JSON output as `results/exomiser.jsonl` (JSON Lines), not `.json`. `exomiser.cwl` specifically globs `*.jsonl`.
 7. **Read Group Format for Giraffe:** `vg giraffe --read-group` expects a bare ID string (`sample`), NOT a tab-separated `@RG\tID:...` line. Tab-containing strings crash downstream `samtools sort`.
@@ -584,7 +595,7 @@ Follow this sequence to deploy and verify the workflow on AWS or OCI:
 - [ ] **Step 2: Mirror Docker Images**
   - If using AWS/OCI without Arvados Keep, create ECR/OCIR repositories for the 12 active images listed in `handover/container-images.tsv`.
   - Build `nelly-exomiser:v4` from `exomiser-wrapper/Dockerfile`.
-  - Build `nelly-acmg-agent:v8` from `acmg-agent/Dockerfile` (no older tag: v8 has the key checks and the recommendation filter).
+  - Build `nelly-acmg-agent:v9` from `acmg-agent/Dockerfile` (no older tag: v8 has the key checks and the recommendation filter).
   - Pin `coolmaksat/kmc` and `coolmaksat/minimap2-samtools` by digest after the first pull.
   - Re-tag and push all images to your cloud registry.
 
@@ -593,12 +604,12 @@ Follow this sequence to deploy and verify the workflow on AWS or OCI:
   - Attach at least **1 TB EBS/Block Volume** scratch disk mounted at `/data/tmp` or similar (never `/tmp`).
 
 - [ ] **Step 4: Configure LLM Backend**
-  - Pick one of the four options in §6.1 (KAUST endpoint with your own key from Robert; same model self-hosted on a ≥48 GB GPU; hosted API only after a data-governance decision; or `llm_backend: "off"`). Only Qwen3.8-27B-FP8 on vLLM 0.28 has been validated.
+  - Pick one of the options in §6.1: OpenRouter with your own key (tested; needs a data-governance decision before real patient data), the same model self-hosted on a ≥48 GB GPU, or `llm_backend: "off"`. The KAUST endpoint is not reachable from outside KAUST. Only Qwen3.8-27B has been validated.
   - Test the endpoint from the machine that will run the ACMG step:
     ```bash
     curl -s -H "Authorization: Bearer $ACMG_LLM_API_KEY" <endpoint>/models
     curl -s -H "Authorization: Bearer $ACMG_LLM_API_KEY" -H "Content-Type: application/json" \
-      -d '{"model":"qwen3.8-27b","messages":[{"role":"user","content":"Reply OK"}],"max_tokens":512}' \
+      -d '{"model":"qwen/qwen3.8-27b","messages":[{"role":"user","content":"Reply OK"}],"max_tokens":512}' \
       <endpoint>/chat/completions
     ```
 
