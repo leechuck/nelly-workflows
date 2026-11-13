@@ -9,6 +9,7 @@ All notable changes to the annotation/interpretation tail of this workflow
 - The LLM check before the reviews now also sends one tiny chat request. OpenRouter answers `GET /models` without a key, so a wrong key, an unknown model name (HTTP 400/404) or an empty account (HTTP 402) was otherwise only visible as one failed review per variant. A busy endpoint (timeout, 429, 5xx) does not fail the check.
 - New optional input `llm_extra_body` (env `ACMG_LLM_EXTRA_BODY`): a JSON object merged into every LLM request, for provider options such as OpenRouter's `{"provider": {"data_collection": "deny"}}`. It cannot override `model`, `messages` or `max_tokens`.
 - `submit.sh` takes `ACMG_LLM_ENDPOINT`, `ACMG_LLM_MODEL` and `ACMG_LLM_EXTRA_BODY` from the environment and applies them to the private copy of the inputs.
+- `main-vg.cwl` exports the LLM audit log as `output_acmg_llm_trace` (it was dropped before); each line now also names the upstream provider.
 - Image `nelly-acmg-agent:v9`.
 
 ### R12 (2026-11-12) — deployment safety and reviewer output policy (`nelly-acmg-agent:v8`)

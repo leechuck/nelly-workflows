@@ -36,9 +36,9 @@ Everything below this section is reference. This section is the shortest correct
      ./submit.sh prod main-vg.cwl main-vg.TS.e2e.json "TS first cloud run"
      ```
      `submit.sh` replaces `FROM-ENV` with the key in a private temporary copy (deleted after submission) and refuses to submit without a key unless `llm_backend` is `off`. `llm_api_key` is declared a CWL secret, so Arvados keeps it out of the visible run inputs. If `ACMG_LLM_ENDPOINT`, `ACMG_LLM_MODEL` or `ACMG_LLM_EXTRA_BODY` are set, they replace `llm_endpoint`, `llm_model` and `llm_extra_body` in the same copy.
-   - Single VM (cwltool + Docker): make a mode-600 copy of the inputs with the real key, then
+   - Single VM (cwltool + Docker): make a mode-600 copy of the inputs with the real key (and your `llm_endpoint` / `llm_model`), then run it; `--enable-ext` makes cwltool treat the key as a secret (and stops it looking up the extension schema on the internet, which can stall `--validate`):
      ```bash
-     cwltool --outdir out/ main-vg.cwl inputs.private.json && rm inputs.private.json
+     cwltool --enable-ext --outdir out/ main-vg.cwl inputs.private.json && rm inputs.private.json
      ```
      (`local/run.sh` automates this but was written for IBEX/cbontsr01; set `NELLY_LOCAL_ROOT`.)
 6. **Check the result.** Exit 0 and `acmg-report.pdf` present. In `acmg-assessment.json`, `llm.status` should be `ok` or `partial` and PDF Appendix A should have text. If `llm.status` is `failed`, `llm.error` says why (key not supplied, key rejected, model name refused, no credit, endpoint unreachable); the classification is still complete. Expected: Tay-Sachs → HEXA c.1421+1G>C homozygous, Pathogenic, 10 points (PVS1, PM2_Supporting, PM3_Supporting); Huntington → HTT 18/46 CAG expansion in the STRchive pathogenic range. About 8 h 20 m on 24 cores / 180 GB.
@@ -188,6 +188,7 @@ Entry Points Overview:
   - `output_acmg_json`: Machine-readable structured ACMG evaluation (`acmg-assessment.json`, schema v1).
   - `output_acmg_report`: ACMG report in Markdown (`acmg-report.md`).
   - `output_acmg_pdf`: Clinical PDF report (`acmg-report.pdf`): the 28-criteria decision table for the leading finding, secondary P/LP candidates, and the LLM commentary as Appendix A. Regenerate without re-running: `python -m acmg_agent.cli render --assessment acmg-assessment.json --out-pdf acmg-report.pdf`.
+  - `output_acmg_llm_trace`: `llm-trace.jsonl`, one line per LLM request (model, upstream provider, token counts, replies; never the key). Absent when the LLM is off.
 
 ### 2.2 `align-and-call.cwl` (Sub-Workflow)
 
@@ -551,7 +552,7 @@ All runs were local (no Arvados): cwltool 3.3 with Singularity on IBEX (Slurm), 
 
 **`dv_mode` decision:** keep `standard` (the default). It beats the legacy stack on both SNPs (+0.0010 F1) and indels (+0.0024). Pangenome-aware DV loses about 0.7 % SNP recall in our setup (no `/dev/shm`, 4 shards) and runs longer, so it stays opt-in until the cause is understood.
 | Offline tests | pipeline dir `python3 -m pytest -q --ignore=acmg-agent`; `acmg-agent/` `uv run pytest -q` | all pass (counts in CHANGELOG R12) |
-| CWL | `cwltool --validate` on every file, `cwltool --pack main-vg.cwl` | clean |
+| CWL | `cwltool --enable-ext --validate` on every file, `cwltool --pack main-vg.cwl` | clean |
 
 The composed `main-vg.cwl` runs used earlier ACMG images; the reports Robert reviewed were produced by re-running only the ACMG step on those same calls. The Yang et al. Saudi-graph HG003 SNP F1 of 0.9971 used vg 1.54 + DV 1.6 and a different evaluation harness; the legacy baseline row above is the like-for-like comparison.
 

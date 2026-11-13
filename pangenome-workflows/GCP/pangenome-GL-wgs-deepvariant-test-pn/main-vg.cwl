@@ -197,6 +197,10 @@ outputs:
   output_acmg_pdf:
     type: File?
     outputSource: acmg-agent/acmg_pdf
+  # Audit log of every LLM request (model, upstream provider, tokens, replies; no key).
+  output_acmg_llm_trace:
+    type: File?
+    outputSource: acmg-agent/llm_trace
 
 steps:
   align-and-call:
@@ -350,5 +354,5 @@ steps:
       llm_max_tokens: llm_max_tokens
       llm_extra_body: llm_extra_body
       pipeline_version: pipeline_version
-    out: [acmg_json, acmg_report, acmg_pdf]
+    out: [acmg_json, acmg_report, acmg_pdf, llm_trace]
     run: acmg-agent.cwl
